@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ShopNest | Your Lists</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-low": "#eff4ff",
+                    "primary-container": "#6063ee",
+                    "tertiary-container": "#727577",
+                    "on-tertiary-fixed": "#191c1e",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-secondary-fixed-variant": "#3f465c",
+                    "inverse-primary": "#c0c1ff",
+                    "surface-container": "#e5eeff",
+                    "on-surface": "#0b1c30",
+                    "on-secondary-fixed": "#131b2e",
+                    "primary-fixed": "#e1e0ff",
+                    "surface-container-high": "#dce9ff",
+                    "tertiary-fixed": "#e0e3e5",
+                    "on-primary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "error": "#ba1a1a",
+                    "outline": "#767586",
+                    "surface-dim": "#cbdbf5",
+                    "tertiary-fixed-dim": "#c4c7c9",
+                    "on-primary-container": "#fffbff",
+                    "on-primary-fixed": "#07006c",
+                    "surface-bright": "#f8f9ff",
+                    "on-secondary": "#ffffff",
+                    "secondary-fixed": "#dae2fd",
+                    "on-tertiary": "#ffffff",
+                    "secondary-fixed-dim": "#bec6e0",
+                    "on-secondary-container": "#5c647a",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary-container": "#fbfdff",
+                    "background": "#f8f9ff",
+                    "on-tertiary-fixed-variant": "#444749",
+                    "surface-variant": "#d3e4fe",
+                    "inverse-surface": "#213145",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "on-error-container": "#93000a",
+                    "outline-variant": "#c7c4d7",
+                    "surface-container-highest": "#d3e4fe",
+                    "on-error": "#ffffff",
+                    "surface-tint": "#494bd6",
+                    "surface": "#f8f9ff",
+                    "secondary-container": "#dae2fd",
+                    "on-background": "#0b1c30",
+                    "on-surface-variant": "#464554",
+                    "secondary": "#565e74",
+                    "primary": "#4648d4",
+                    "tertiary": "#595c5e",
+                    "on-primary-fixed-variant": "#2f2ebe"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "2xl": "1rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "16px",
+                    "container-padding": "20px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "xs": "4px",
+                    "md": "16px",
+                    "base": "4px",
+                    "sm": "8px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Geist"],
+                    "headline-md": ["Geist"],
+                    "label-md": ["Geist"],
+                    "body-lg": ["Geist"],
+                    "label-sm": ["Geist"],
+                    "headline-sm": ["Geist"],
+                    "body-md": ["Geist"],
+                    "headline-md-mobile": ["Geist"]
+            },
+            "fontSize": {
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md-mobile": ["22px", {"lineHeight": "28px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Geist', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .neumorphic-btn {
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05), -1px -1px 3px rgba(255,255,255,0.8);
+        }
+        .neumorphic-btn:active {
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.1), inset -1px -1px 3px rgba(255,255,255,0.5);
+            transform: scale(0.98);
+        }
+        .glass-header {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-b border-outline-variant/30 dark:border-outline/20">
+<div class="flex justify-between items-center px-container-padding h-16 w-full max-w-screen-xl mx-auto">
+<div class="flex items-center gap-4">
+<button class="p-2 text-primary dark:text-primary-fixed hover:bg-primary-container/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-display-lg text-display-lg tracking-tight text-primary dark:text-primary-fixed">ShopNest</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-primary-container/10 transition-colors active:scale-95 duration-200" onclick="document.documentElement.classList.toggle('dark')">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</button>
+<button class="p-2 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-primary-container/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+</div>
+</div>
+</header>
+<main class="pt-24 px-container-padding max-w-screen-xl mx-auto w-full">
+<!-- Premium Quick Add Composer -->
+<section class="mb-12">
+<div class="relative group max-w-2xl mx-auto">
+<div class="absolute -inset-0.5 bg-gradient-to-r from-primary to-primary-container rounded-2xl blur opacity-15 group-focus-within:opacity-30 transition duration-1000 group-focus-within:duration-200"></div>
+<div class="relative flex items-center bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-2 shadow-sm">
+<span class="material-symbols-outlined text-outline ml-3" data-icon="add_circle">add_circle</span>
+<input class="flex-1 bg-transparent border-none focus:ring-0 px-4 font-body-md text-on-surface placeholder:text-outline/60" placeholder="Create a new shopping list..." type="text"/>
+<button class="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-label-md transition-all duration-200 active:scale-95 shadow-md flex items-center gap-2 neumorphic-btn">
+<span>Create</span>
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- List Grid -->
+<section>
+<div class="flex items-center justify-between mb-6">
+<h2 class="font-headline-md text-headline-md text-on-surface">Your Lists</h2>
+<button class="flex items-center gap-1 text-primary font-label-md">
+<span class="material-symbols-outlined text-[18px]" data-icon="sort">sort</span>
+<span>Recent</span>
+</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-[0_4px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-all duration-300 group relative">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 cursor-grab text-outline-variant active:cursor-grabbing">
+<span class="material-symbols-outlined" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="h-10 w-10 rounded-xl bg-primary-container/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="shopping_basket">shopping_basket</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Weekly Groceries</h3>
+<div class="flex items-center gap-3 text-on-surface-variant font-label-sm mb-6">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="list">list</span> 12 items</span>
+<span class="h-1 w-1 bg-outline-variant rounded-full"></span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="history">history</span> 2h ago</span>
+</div>
+<div class="flex items-center gap-2 pt-4 border-t border-outline-variant/20">
+<button class="flex-1 py-2 rounded-lg bg-primary-container text-on-primary-container font-label-md text-center transition-colors hover:brightness-105 active:scale-95">Open</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="delete">delete</span>
+</button>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-[0_4px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-all duration-300 group relative">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 cursor-grab text-outline-variant active:cursor-grabbing">
+<span class="material-symbols-outlined" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="h-10 w-10 rounded-xl bg-tertiary-container/10 flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined" data-icon="home_repair_service">home_repair_service</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Home Reno</h3>
+<div class="flex items-center gap-3 text-on-surface-variant font-label-sm mb-6">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="list">list</span> 8 items</span>
+<span class="h-1 w-1 bg-outline-variant rounded-full"></span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="history">history</span> 1d ago</span>
+</div>
+<div class="flex items-center gap-2 pt-4 border-t border-outline-variant/20">
+<button class="flex-1 py-2 rounded-lg bg-primary-container text-on-primary-container font-label-md text-center transition-colors hover:brightness-105 active:scale-95">Open</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="delete">delete</span>
+</button>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-[0_4px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-all duration-300 group relative">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 cursor-grab text-outline-variant active:cursor-grabbing">
+<span class="material-symbols-outlined" data-icon="drag_indicator">drag_indicator</span>
+</div>
+<div class="h-10 w-10 rounded-xl bg-primary-container/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="devices">devices</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-1">Tech Wishlist</h3>
+<div class="flex items-center gap-3 text-on-surface-variant font-label-sm mb-6">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="list">list</span> 5 items</span>
+<span class="h-1 w-1 bg-outline-variant rounded-full"></span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]" data-icon="history">history</span> 3d ago</span>
+</div>
+<div class="flex items-center gap-2 pt-4 border-t border-outline-variant/20">
+<button class="flex-1 py-2 rounded-lg bg-primary-container text-on-primary-container font-label-md text-center transition-colors hover:brightness-105 active:scale-95">Open</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+</button>
+<button class="p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="delete">delete</span>
+</button>
+</div>
+</div>
+<!-- Empty State / Add New Placeholder -->
+<div class="border-2 border-dashed border-outline-variant/40 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[220px] group cursor-pointer hover:border-primary/50 transition-colors">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-outline-variant group-hover:text-primary group-hover:bg-primary-container/10 transition-all">
+<span class="material-symbols-outlined text-[32px]" data-icon="add">add</span>
+</div>
+<p class="mt-3 font-label-md text-outline">New List</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-safe px-4 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-t border-outline-variant/30 dark:border-outline/20 z-50 shadow-lg rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 transition-all active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="format_list_bulleted">format_list_bulleted</span>
+<span class="font-label-sm text-label-sm">Lists</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+<span class="font-label-sm text-label-sm">Archive</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-sm text-label-sm">Settings</span>
+</a>
+</nav>
+<!-- Floating Action Button (FAB) - Contextual for Home Screen -->
+<button class="fixed right-6 bottom-24 w-14 h-14 bg-primary text-on-primary rounded-2xl shadow-[0_8px_20px_rgba(73,75,214,0.3)] flex items-center justify-center active:scale-90 transition-transform z-40 neumorphic-btn">
+<span class="material-symbols-outlined text-[32px]" data-icon="add">add</span>
+</button>
+<script>
+        // Simple Interaction logic for demo
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                // Micro-ripple effect could be added here
+            });
+        });
+
+        // Search input animation/interaction
+        const searchInput = document.querySelector('input');
+        searchInput.addEventListener('focus', () => {
+            searchInput.parentElement.classList.add('shadow-md');
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.parentElement.classList.remove('shadow-md');
+        });
+    </script>
+</body></html>

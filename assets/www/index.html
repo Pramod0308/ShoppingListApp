@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <meta name="theme-color" content="#f8f9ff">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    
+    <title>ShopNest | Smart Shopping List</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet"/>
+    <!-- Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "surface-container-low": "#eff4ff",
+                "primary-container": "#6063ee",
+                "tertiary-container": "#727577",
+                "on-tertiary-fixed": "#191c1e",
+                "inverse-on-surface": "#eaf1ff",
+                "on-secondary-fixed-variant": "#3f465c",
+                "inverse-primary": "#c0c1ff",
+                "surface-container": "#e5eeff",
+                "on-surface": "#0b1c30",
+                "on-secondary-fixed": "#131b2e",
+                "primary-fixed": "#e1e0ff",
+                "surface-container-high": "#dce9ff",
+                "tertiary-fixed": "#e0e3e5",
+                "on-primary": "#ffffff",
+                "error-container": "#ffdad6",
+                "error": "#ba1a1a",
+                "outline": "#767586",
+                "surface-dim": "#cbdbf5",
+                "tertiary-fixed-dim": "#c4c7c9",
+                "on-primary-container": "#fffbff",
+                "on-primary-fixed": "#07006c",
+                "surface-bright": "#f8f9ff",
+                "on-secondary": "#ffffff",
+                "secondary-fixed": "#dae2fd",
+                "on-tertiary": "#ffffff",
+                "secondary-fixed-dim": "#bec6e0",
+                "on-secondary-container": "#5c647a",
+                "surface-container-lowest": "#ffffff",
+                "on-tertiary-container": "#fbfdff",
+                "background": "#f8f9ff",
+                "on-tertiary-fixed-variant": "#444749",
+                "surface-variant": "#d3e4fe",
+                "inverse-surface": "#213145",
+                "primary-fixed-dim": "#c0c1ff",
+                "on-error-container": "#93000a",
+                "outline-variant": "#c7c4d7",
+                "surface-container-highest": "#d3e4fe",
+                "on-error": "#ffffff",
+                "surface-tint": "#494bd6",
+                "surface": "#f8f9ff",
+                "secondary-container": "#dae2fd",
+                "on-background": "#0b1c30",
+                "on-surface-variant": "#464554",
+                "secondary": "#565e74",
+                "primary": "#4648d4",
+                "tertiary": "#595c5e",
+                "on-primary-fixed-variant": "#2f2ebe"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "2xl": "1rem",
+                "full": "9999px"
+            },
+            "fontFamily": {
+                "display-lg": ["Geist"],
+                "headline-md": ["Geist"],
+                "label-md": ["Geist"],
+                "body-lg": ["Geist"],
+                "label-sm": ["Geist"],
+                "headline-sm": ["Geist"],
+                "body-md": ["Geist"],
+                "headline-md-mobile": ["Geist"]
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-background text-on-surface min-h-screen pb-32">
+
+    <!-- HOME VIEW -->
+    <div id="home">
+        <header class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-b border-outline-variant/30 dark:border-outline/20">
+            <div class="flex justify-between items-center px-4 h-16 w-full max-w-screen-xl mx-auto">
+                <div class="flex items-center gap-4">
+                    <button class="p-2 text-primary dark:text-primary-fixed hover:bg-primary-container/10 transition-colors active:scale-95 duration-200" aria-label="Menu">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <h1 class="font-display-lg text-[24px] font-bold tracking-tight text-primary dark:text-primary-fixed">ShopNest</h1>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="themeToggle" class="p-2 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-primary-container/10 transition-colors active:scale-95 duration-200" aria-label="Toggle Theme">
+                        <span class="material-symbols-outlined">dark_mode</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="pt-24 px-4 max-w-screen-xl mx-auto w-full">
+            <!-- Premium Quick Add Composer -->
+            <section class="mb-12">
+                <div class="relative group max-w-2xl mx-auto">
+                    <div class="absolute -inset-0.5 bg-gradient-to-r from-primary to-primary-container rounded-2xl blur opacity-15 transition duration-1000 group-focus-within:duration-200 group-focus-within:opacity-30"></div>
+                    <div class="relative flex items-center bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-2 shadow-sm">
+                        <span class="material-symbols-outlined text-outline ml-3">add_circle</span>
+                        <input id="newListName" type="text" class="flex-1 bg-transparent border-none focus:ring-0 px-4 font-body-md text-on-surface placeholder:text-outline/60" placeholder="Create a new shopping list...">
+                        <button id="createListBtn" class="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-medium transition-all duration-200 active:scale-95 shadow-md flex items-center gap-2 neumorphic-btn">
+                            <span>Create</span>
+                            <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- List Grid -->
+            <section>
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-[20px] font-bold text-on-surface">Your Lists</h2>
+                    <button class="flex items-center gap-1 text-primary text-[14px] font-medium">
+                        <span class="material-symbols-outlined text-[18px]">sort</span>
+                        <span>Recent</span>
+                    </button>
+                </div>
+                <div id="listsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Cards will be injected here via app.js -->
+                </div>
+            </section>
+        </main>
+        
+        <!-- Bottom Navigation Shell -->
+        <nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-safe px-4 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-t border-outline-variant/30 dark:border-outline/20 z-50 rounded-t-xl shadow-lg">
+            <a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 transition-all active:scale-90" href="#">
+                <span class="material-symbols-outlined">format_list_bulleted</span>
+                <span class="text-[12px] font-medium">Lists</span>
+            </a>
+            <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
+                <span class="material-symbols-outlined">archive</span>
+                <span class="text-[12px] font-medium">Archive</span>
+            </a>
+            <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="text-[12px] font-medium">Settings</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- LIST DETAILS VIEW -->
+    <div id="listView" class="hidden">
+        <header class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-b border-outline-variant/30 dark:border-outline/20">
+            <div class="flex justify-between items-center px-4 h-16 w-full max-w-[720px] mx-auto">
+                <div class="flex items-center gap-4">
+                    <button id="backHome" aria-label="Go Back" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95">
+                        <span class="material-symbols-outlined text-primary">arrow_back</span>
+                    </button>
+                    <div class="flex flex-col">
+                        <input id="listName" type="text" class="bg-transparent border-none p-0 text-[20px] font-bold text-on-surface focus:ring-0 focus:outline-none w-full max-w-[180px] md:max-w-xs" value="List Name">
+                    </div>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button id="toggleDates" class="p-2 text-on-surface-variant hover:bg-primary-container/10 transition-colors active:scale-95 duration-200" aria-label="Toggle Timestamps" title="Toggle Timestamps">
+                        <span class="material-symbols-outlined">schedule</span>
+                    </button>
+                    <button id="themeToggle2" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95">
+                        <span class="material-symbols-outlined text-primary">dark_mode</span>
+                    </button>
+                    <button id="shareBtn" aria-label="Share" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95">
+                        <span class="material-symbols-outlined text-primary">share</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="pt-24 px-4 max-w-[720px] mx-auto w-full min-h-screen">
+            <!-- Composer Section -->
+            <section class="mb-6">
+                <div class="relative group flex items-center bg-surface-container-lowest border border-outline-variant/50 rounded-xl shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                    <span class="material-symbols-outlined text-outline ml-4 absolute pointer-events-none">add_circle</span>
+                    <textarea id="itemInput" class="w-full min-h-[56px] pl-12 pr-12 py-4 bg-transparent border-none focus:ring-0 resize-none font-body-md shadow-none leading-tight" placeholder="Add items (multiline supported)..." rows="1"></textarea>
+                    <button id="addBtn" aria-label="Add Item" class="absolute right-2 w-10 h-10 flex items-center justify-center text-primary hover:bg-primary-container/20 rounded-full transition-colors">
+                        <span class="material-symbols-outlined">send</span>
+                    </button>
+                </div>
+
+                <!-- Metadata & Quick Actions -->
+                <div class="mt-4 flex items-center justify-between">
+                    <span class="text-[12px] font-medium text-on-surface-variant flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                        <span id="remaining">0 remaining</span>
+                    </span>
+                    <div class="flex gap-2">
+                        <button id="clearCompleted" class="px-3 py-1.5 rounded-lg text-[12px] font-medium text-secondary hover:bg-secondary-container/50 transition-colors">
+                            Clear completed
+                        </button>
+                        <button id="clearAll" class="px-3 py-1.5 rounded-lg text-[12px] font-medium text-error hover:bg-error-container/30 transition-colors">
+                            Clear all
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Shopping List Items -->
+            <ul id="list" class="space-y-3 pb-24">
+                <!-- List items will be injected here via app.js -->
+            </ul>
+        </main>
+    </div>
+
+    <!-- PWA Script -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('Service Worker registered'))
+            .catch(err => console.log('Service Worker registration failed:', err));
+        });
+      }
+    </script>
+    
+    <!-- App Logic -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

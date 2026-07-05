@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>List Details - ShopNest</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-low": "#eff4ff",
+                    "primary-container": "#6063ee",
+                    "tertiary-container": "#727577",
+                    "on-tertiary-fixed": "#191c1e",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-secondary-fixed-variant": "#3f465c",
+                    "inverse-primary": "#c0c1ff",
+                    "surface-container": "#e5eeff",
+                    "on-surface": "#0b1c30",
+                    "on-secondary-fixed": "#131b2e",
+                    "primary-fixed": "#e1e0ff",
+                    "surface-container-high": "#dce9ff",
+                    "tertiary-fixed": "#e0e3e5",
+                    "on-primary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "error": "#ba1a1a",
+                    "outline": "#767586",
+                    "surface-dim": "#cbdbf5",
+                    "tertiary-fixed-dim": "#c4c7c9",
+                    "on-primary-container": "#fffbff",
+                    "on-primary-fixed": "#07006c",
+                    "surface-bright": "#f8f9ff",
+                    "on-secondary": "#ffffff",
+                    "secondary-fixed": "#dae2fd",
+                    "on-tertiary": "#ffffff",
+                    "secondary-fixed-dim": "#bec6e0",
+                    "on-secondary-container": "#5c647a",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary-container": "#fbfdff",
+                    "background": "#f8f9ff",
+                    "on-tertiary-fixed-variant": "#444749",
+                    "surface-variant": "#d3e4fe",
+                    "inverse-surface": "#213145",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "on-error-container": "#93000a",
+                    "outline-variant": "#c7c4d7",
+                    "surface-container-highest": "#d3e4fe",
+                    "on-error": "#ffffff",
+                    "surface-tint": "#494bd6",
+                    "surface": "#f8f9ff",
+                    "secondary-container": "#dae2fd",
+                    "on-background": "#0b1c30",
+                    "on-surface-variant": "#464554",
+                    "secondary": "#565e74",
+                    "primary": "#4648d4",
+                    "tertiary": "#595c5e",
+                    "on-primary-fixed-variant": "#2f2ebe"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "16px",
+                    "container-padding": "20px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "xs": "4px",
+                    "md": "16px",
+                    "base": "4px",
+                    "sm": "8px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Geist"],
+                    "headline-md": ["Geist"],
+                    "label-md": ["Geist"],
+                    "body-lg": ["Geist"],
+                    "label-sm": ["Geist"],
+                    "headline-sm": ["Geist"],
+                    "body-md": ["Geist"],
+                    "headline-md-mobile": ["Geist"]
+            },
+            "fontSize": {
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md-mobile": ["22px", {"lineHeight": "28px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .neumorphic-btn {
+            box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.4), inset -1px -1px 0px rgba(0, 0, 0, 0.05);
+        }
+        .item-row {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-panel {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md min-h-screen selection:bg-primary/20">
+<!-- Top Navigation Shell -->
+<header class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-b border-outline-variant/30">
+<div class="flex justify-between items-center px-container-padding h-16 w-full max-w-screen-xl mx-auto">
+<div class="flex items-center gap-4">
+<button aria-label="Go Back" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95">
+<span class="material-symbols-outlined text-primary">arrow_back</span>
+</button>
+<div class="flex flex-col">
+<input class="bg-transparent border-none p-0 font-headline-md-mobile text-headline-md-mobile text-on-surface focus:ring-0 focus:outline-none w-full max-w-[180px] md:max-w-xs" type="text" value="Weekly Groceries"/>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Share" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95">
+<span class="material-symbols-outlined text-primary">share</span>
+</button>
+<button aria-label="Toggle Theme" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-primary-container/10 transition-colors active:scale-95" id="theme-toggle">
+<span class="material-symbols-outlined text-primary">dark_mode</span>
+</button>
+</div>
+</div>
+</header>
+<main class="pt-20 pb-24 px-container-padding max-w-[720px] mx-auto min-h-screen">
+<!-- Composer Section -->
+<section class="mb-lg">
+<div class="relative group">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-xl">add_circle</span>
+</div>
+<input class="w-full h-14 pl-12 pr-4 bg-surface-container-lowest border border-outline-variant rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all font-body-md shadow-sm" placeholder="Add new item..." type="text"/>
+</div>
+<!-- Metadata & Quick Actions -->
+<div class="mt-md flex items-center justify-between">
+<span class="font-label-sm text-on-surface-variant flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                    5 remaining
+                </span>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 rounded-lg font-label-sm text-secondary hover:bg-secondary-container/50 transition-colors">
+                        Clear completed
+                    </button>
+<button class="px-3 py-1.5 rounded-lg font-label-sm text-error hover:bg-error-container/30 transition-colors">
+                        Clear all
+                    </button>
+</div>
+</div>
+</section>
+<!-- Shopping List Items -->
+<div class="space-y-3" id="shopping-list">
+<!-- Active Item -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] group">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface peer-checked:text-on-surface-variant/40 peer-checked:line-through transition-all">Almond Milk</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+<!-- Completed Item -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container/30 border border-outline-variant/20 rounded-xl group opacity-60">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline/30 group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input checked="" class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-primary bg-primary rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface-variant line-through">Avocados</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+<!-- Active Item 2 -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] group">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface">Coffee Beans</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+<!-- Active Item 3 -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] group">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface">Greek Yogurt</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+<!-- Active Item 4 -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] group">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface">Whole Wheat Bread</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+<!-- Active Item 5 -->
+<div class="item-row flex items-center gap-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] group">
+<button aria-label="Drag to reorder" class="cursor-grab active:cursor-grabbing text-outline group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">drag_indicator</span>
+</button>
+<label class="relative flex items-center cursor-pointer">
+<input class="peer sr-only" type="checkbox"/>
+<div class="w-6 h-6 border-2 border-outline-variant rounded-full peer-checked:bg-primary peer-checked:border-primary transition-all flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-white opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+</div>
+</label>
+<span class="flex-1 font-body-md text-on-surface">Organic Spinach</span>
+<button aria-label="Delete item" class="w-10 h-10 flex items-center justify-center text-outline-variant hover:text-error hover:bg-error-container/20 rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+<!-- Atmospheric Visual Element -->
+<div class="mt-20 opacity-20 flex justify-center">
+<div class="grid grid-cols-3 gap-8">
+<div class="w-24 h-24 rounded-full bg-gradient-to-tr from-primary/30 to-transparent blur-2xl"></div>
+<div class="w-32 h-32 rounded-full bg-gradient-to-bl from-secondary-container to-transparent blur-2xl"></div>
+<div class="w-20 h-20 rounded-full bg-gradient-to-r from-primary-container/20 to-transparent blur-2xl"></div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB -->
+<button class="fixed bottom-24 right-container-padding w-14 h-14 bg-primary text-white rounded-2xl flex items-center justify-center shadow-[0_8px_20px_rgba(70,72,212,0.3)] active:scale-90 transition-transform neumorphic-btn z-40 group">
+<span class="material-symbols-outlined text-2xl group-hover:rotate-90 transition-transform">add</span>
+</button>
+<!-- Bottom Navigation Shell -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-safe px-4 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-t border-outline-variant/30 z-50 rounded-t-xl shadow-lg">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 transition-all" href="#">
+<span class="material-symbols-outlined">format_list_bulleted</span>
+<span class="font-label-sm text-label-sm">Lists</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-label-sm text-label-sm">Archive</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-sm text-label-sm">Settings</span>
+</a>
+</nav>
+<script>
+        // Simple Theme Toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        const htmlElement = document.documentElement;
+        
+        themeToggle.addEventListener('click', () => {
+            htmlElement.classList.toggle('dark');
+            const icon = themeToggle.querySelector('span');
+            icon.innerText = htmlElement.classList.contains('dark') ? 'light_mode' : 'dark_mode';
+        });
+
+        // Simple checkbox toggle animation logic
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const row = this.closest('.item-row');
+                const text = row.querySelector('.flex-1');
+                if (this.checked) {
+                    text.classList.add('line-through', 'text-on-surface-variant/40');
+                    row.classList.add('opacity-60');
+                } else {
+                    text.classList.remove('line-through', 'text-on-surface-variant/40');
+                    row.classList.remove('opacity-60');
+                }
+            });
+        });
+
+        // Simulate swipe actions (Mobile only placeholder logic)
+        let touchstartX = 0;
+        let touchendX = 0;
+
+        document.querySelectorAll('.item-row').forEach(row => {
+            row.addEventListener('touchstart', e => {
+                touchstartX = e.changedTouches[0].screenX;
+            }, false);
+
+            row.addEventListener('touchend', e => {
+                touchendX = e.changedTouches[0].screenX;
+                handleSwipe(row);
+            }, false);
+        });
+
+        function handleSwipe(row) {
+            const diff = touchstartX - touchendX;
+            if (diff > 50) { // Swipe Left (Delete)
+                row.style.transform = 'translateX(-100%)';
+                row.style.opacity = '0';
+                setTimeout(() => row.remove(), 300);
+            }
+            if (diff < -50) { // Swipe Right (Complete)
+                const cb = row.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+                cb.dispatchEvent(new Event('change'));
+            }
+        }
+    </script>
+</body></html>
