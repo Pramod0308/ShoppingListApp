@@ -10,7 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_inappwebview: ^6.0.0
-  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:
@@ -19,7 +18,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Asset directories are not recursive — every subdirectory needs its own entry.
   assets:
     - assets/www/
-    - assets/www/images/
-    - assets/www/stitch_assets/
+    - assets/www/fonts/
+    - assets/www/icons/
+    - assets/www/vendor/

@@ -1,17 +1,34 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+/// The bundle is served over loopback HTTP rather than opened as a file:// URL.
+/// A real origin is what lets the two file-URL access settings stay off, and it is
+/// also what makes ES modules, the history API and persistent storage behave the
+/// way they do in a browser.
+///
+/// Changing this port changes the page's origin, which orphans everything already
+/// saved in IndexedDB under the old one. Treat it as part of the on-disk format.
+const int kLocalServerPort = 8737;
+
+/// Bound to 127.0.0.1 by the plugin, so nothing off the device can reach it.
+final InAppLocalhostServer localhostServer = InAppLocalhostServer(
+  port: kLocalServerPort,
+  documentRoot: 'assets/www/',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  if (Platform.isAndroid) {
-    await Permission.camera.request();
-    await Permission.microphone.request();
-    // Needed for WebRTC
-  }
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ),
+  );
+
+  await localhostServer.start();
 
   runApp(const MyApp());
 }
@@ -21,13 +38,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
-    );
-
     return MaterialApp(
       title: 'Shopping List',
       debugShowCheckedModeBanner: false,
@@ -49,38 +59,65 @@ class WebViewScreen extends StatefulWidget {
 class _WebViewScreenState extends State<WebViewScreen> {
   InAppWebViewController? webViewController;
   InAppWebViewSettings settings = InAppWebViewSettings(
-    isInspectable: true,
+    // Remote debugging is a debug-build affordance, not something to ship.
+    isInspectable: kDebugMode,
     mediaPlaybackRequiresUserGesture: false,
     allowsInlineMediaPlayback: true,
-    iframeAllow: "camera; microphone",
     iframeAllowFullscreen: true,
-    allowFileAccessFromFileURLs: true,
-    allowUniversalAccessFromFileURLs: true,
     databaseEnabled: true,
     domStorageEnabled: true,
     javaScriptEnabled: true,
   );
 
+  /// Offers the back gesture to the web app first. It navigates in place rather
+  /// than through page loads, so there is no WebView history to walk back
+  /// through — `__shopnestBack` returns true when it moved off the list view.
+  Future<bool> _webAppHandledBack() async {
+    final controller = webViewController;
+    if (controller == null) return false;
+
+    final handled = await controller.evaluateJavascript(
+      source: "window.__shopnestBack ? window.__shopnestBack() : false",
+    );
+    // Android returns a bool, iOS can hand back the string "true".
+    return handled == true || handled == 'true';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FF), // Matches surface-container-lowest
-      body: SafeArea(
-        bottom: false,
-        child: InAppWebView(
-          initialFile: "assets/www/index.html",
-          initialSettings: settings,
-          onWebViewCreated: (controller) {
-            webViewController = controller;
-          },
-          onPermissionRequest: (controller, request) async {
-            return PermissionResponse(
-                resources: request.resources,
-                action: PermissionResponseAction.GRANT);
-          },
-          onConsoleMessage: (controller, consoleMessage) {
-            debugPrint("WEBVIEW: ${consoleMessage.message}");
-          },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _webAppHandledBack()) return;
+        // Nothing left to go back to — behave like the launcher activity closing.
+        await SystemNavigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor:
+            const Color(0xFFF8F9FF), // Matches surface-container-lowest
+        body: SafeArea(
+          bottom: false,
+          child: InAppWebView(
+            initialUrlRequest: URLRequest(
+              url: WebUri("http://localhost:$kLocalServerPort/"),
+            ),
+            initialSettings: settings,
+            onWebViewCreated: (controller) {
+              webViewController = controller;
+            },
+            // Nothing in the bundle uses the camera, the microphone or location.
+            // If a request ever appears, something is wrong — refuse it rather
+            // than handing it over on the user's behalf.
+            onPermissionRequest: (controller, request) async {
+              return PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.DENY);
+            },
+            onConsoleMessage: (controller, consoleMessage) {
+              debugPrint("WEBVIEW: ${consoleMessage.message}");
+            },
+          ),
         ),
       ),
     );

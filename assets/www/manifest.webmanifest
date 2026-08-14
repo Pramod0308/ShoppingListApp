@@ -1,0 +1,16 @@
+{
+  "name": "ShopNest — Smart Shopping List",
+  "short_name": "ShopNest",
+  "description": "Shopping lists that work offline and sync straight between your devices.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f9ff",
+  "theme_color": "#f8f9ff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

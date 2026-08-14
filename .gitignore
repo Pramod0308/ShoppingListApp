@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Web bundle tooling (assets/www is the build *output* and stays committed)
+node_modules/
+
+# Android release signing (provided by CI secrets, never committed)
+android/key.properties
+android/*.jks
+android/*.keystore

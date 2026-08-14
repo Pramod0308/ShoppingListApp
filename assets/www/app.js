@@ -1,31 +1,44 @@
-import * as Y from "https://esm.sh/yjs";
-import { WebrtcProvider } from "https://esm.sh/y-webrtc";
-import { IndexeddbPersistence } from "https://esm.sh/y-indexeddb";
+// Bundled locally by `npm run build:vendor` — the app has to start with no network.
+import { Store } from "./store.js";
+import { resolveLinkSecret } from "./peer-sync.js";
+import { PUBLIC_BASE_URL } from "./sync-config.js";
 
-// ---------- Global Yjs Setup ----------
-const ydoc = new Y.Doc();
+const store = new Store();
+const linkSecret = resolveLinkSecret(location.search);
 
-// Share the sync room ID via URL to link devices (like WhatsApp web linking)
-let syncRoom = new URLSearchParams(location.search).get('room') || localStorage.getItem('shopnest-sync-room');
-if (!syncRoom) {
-  syncRoom = 'shopnest-' + Math.random().toString(36).substring(2, 10);
+// The bundle is loaded from a loopback server inside the mobile shell, where the
+// URL means nothing to anyone else. It is the source of truth on the web, so every
+// write is best-effort and never allowed to take the app down with it.
+function writeUrl(href, { replace = false } = {}) {
+  try {
+    if (replace) history.replaceState({}, '', href);
+    else history.pushState({}, '', href);
+    return true;
+  } catch {
+    return false;
+  }
 }
-// Always save the current room so that if they open it without the query param next time, it remembers.
-localStorage.setItem('shopnest-sync-room', syncRoom);
 
-// Update URL to include room so they can easily copy/paste to another device
-const urlParams = new URLSearchParams(location.search);
-if (!urlParams.has('room')) {
-  urlParams.set('room', syncRoom);
-  window.history.replaceState({}, '', `${location.pathname}?${urlParams}`);
+// Secrets have been read into storage by now, so take them back out of the URL
+// rather than leaving them in the address bar, in history and in any screenshot.
+const incomingShare = new URLSearchParams(location.search).get('join');
+if (incomingShare || new URLSearchParams(location.search).has('link')) {
+  const cleaned = new URL(location.href);
+  cleaned.searchParams.delete('link');
+  cleaned.searchParams.delete('join');
+  writeUrl(cleaned.href, { replace: true });
 }
 
-const providerIdb = new IndexeddbPersistence('shopnest-db', ydoc);
-// Use public signaling servers for WebRTC P2P sync
-const providerWebrtc = new WebrtcProvider(syncRoom, ydoc);
-
-const yLists = ydoc.getMap('lists'); // listId -> { id, name, created_at, updated_at, order_index }
-const yItems = ydoc.getMap('items'); // itemId -> { id, list_id, text, done, created_at, updated_at, order_index }
+// The service worker is for the published web app. Inside the mobile shell the
+// bundle already comes off disk through a loopback server, so a cache in front of
+// it would only serve yesterday's build after an app update.
+if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      console.warn('service worker registration failed:', err.message);
+    });
+  });
+}
 
 /* ---------- Elements (HOME) ---------- */
 const homeSection       = document.getElementById('home');
@@ -33,12 +46,12 @@ const listsGrid         = document.getElementById('listsGrid');
 const newListNameEl     = document.getElementById('newListName');
 const createListBtn     = document.getElementById('createListBtn');
 const themeToggle       = document.getElementById('themeToggle');
+const linkDeviceBtn     = document.getElementById('linkDevice');
 
 /* ---------- Elements (LIST VIEW) ---------- */
 const listView          = document.getElementById('listView');
 const backHomeBtn       = document.getElementById('backHome');
 const listNameEl        = document.getElementById('listName');
-const currentListTitle  = document.getElementById('currentListTitle'); // To update the top bar text
 const shareBtn          = document.getElementById('shareBtn');
 const themeToggle2      = document.getElementById('themeToggle2');
 const toggleDatesBtn    = document.getElementById('toggleDates');
@@ -56,9 +69,52 @@ const fmt = (iso) => {
   return d && !isNaN(d.getTime()) ? d.toLocaleString() : '…';
 };
 const root   = document.documentElement;
-const nowIso = () => new Date().toISOString();
 
+/* ============================================================
+   ROUTING
+
+   Which view is showing is held here, not read back out of the URL. Reloading the
+   page to navigate used to drop writes that had not reached IndexedDB yet, and a
+   file:// URL carrying a query string does not resolve reliably in a WebView, so
+   both views now swap in place. The URL still tracks the route for shareable links
+   on the web, but nothing reads it after startup.
+   ============================================================ */
 let listId = qs('list');
+
+function routeUrl(id) {
+  const url = new URL(location.href);
+  if (id) url.searchParams.set('list', id);
+  else url.searchParams.delete('list');
+  return url.href;
+}
+
+function openList(id) {
+  listId = id;
+  writeUrl(routeUrl(id));
+  showListView();
+}
+
+function goHome() {
+  listId = null;
+  writeUrl(routeUrl(null));
+  showHome();
+}
+
+// The browser back button on the web, and the hardware back gesture on Android via
+// the shell below.
+window.addEventListener('popstate', () => {
+  listId = qs('list');
+  if (listId) showListView();
+  else showHome();
+});
+
+// Called by the Flutter shell when Android's back gesture fires. Returns true when
+// the web app consumed it; false tells the shell to close the app.
+window.__shopnestBack = () => {
+  if (!listId) return false;
+  goHome();
+  return true;
+};
 
 /* ============================================================
    THEME & TIMESTAMPS
@@ -94,301 +150,350 @@ if (toggleDatesBtn) {
 }
 
 /* ============================================================
+   RENDERING
+
+   Rows are reconciled by id instead of being thrown away and rebuilt. Wiping the
+   container on every change meant that any edit arriving from another device — or
+   from the row next door — destroyed whatever input the user was typing in.
+   ============================================================ */
+
+// Writes a value into an input without disturbing the caret when the user is in it.
+function setInputValue(input, value) {
+  if (input.value === value) return;
+  if (document.activeElement !== input) {
+    input.value = value;
+    return;
+  }
+  const start = input.selectionStart ?? value.length;
+  const end = input.selectionEnd ?? start;
+  input.value = value;
+  try {
+    input.setSelectionRange(Math.min(start, value.length), Math.min(end, value.length));
+  } catch {
+    // Inputs that do not support selection ranges; nothing to preserve.
+  }
+}
+
+// Keyed reconciliation. `cache` maps id -> element and is mutated in place.
+function reconcile(container, entries, cache, create, update) {
+  const seen = new Set();
+  let previous = null;
+
+  for (const entry of entries) {
+    const id = entry.id;
+    seen.add(id);
+
+    let el = cache.get(id);
+    if (!el) {
+      el = create(entry);
+      cache.set(id, el);
+    }
+    update(el, entry);
+
+    const shouldFollow = previous ? previous.nextElementSibling : container.firstElementChild;
+    if (shouldFollow !== el) container.insertBefore(el, shouldFollow);
+    previous = el;
+  }
+
+  for (const [id, el] of cache) {
+    if (!seen.has(id)) {
+      el.remove();
+      cache.delete(id);
+    }
+  }
+}
+
+/* ============================================================
    HOME (lists)
    ============================================================ */
+const listRows = new Map();
+let emptyStateEl = null;
+
 function createList() {
-  const name  = (newListNameEl?.value || '').trim() || 'My Shopping List';
-  const now   = nowIso();
-  const order = Date.now();
-  const id    = 'list-' + Math.random().toString(36).substring(2, 9);
-  
-  yLists.set(id, { id, name, created_at: now, updated_at: now, order_index: order });
-  
+  const name = (newListNameEl?.value || '').trim() || 'My Shopping List';
   newListNameEl.value = '';
-  const url = new URL(location.href);
-  url.searchParams.set('list', id);
-  location.href = url.href;
+  openList(store.createList(name));
 }
 
-function loadLists() {
-  // Convert Y.Map to array
-  let lists = Array.from(yLists.values());
-  // Sort
-  lists.sort((a, b) => {
-    const oi = (b.order_index ?? 0) - (a.order_index ?? 0);
-    if (oi !== 0) return oi;
-    return new Date(b.updated_at) - new Date(a.updated_at);
-  });
-  renderLists(lists);
+// Links are built against the published origin, not location.origin: inside the
+// mobile shell the page is served from a loopback server, and a localhost URL means
+// nothing on the device it gets sent to.
+function publicUrl(param, value) {
+  const url = new URL(PUBLIC_BASE_URL);
+  url.searchParams.set(param, value);
+  return url.href;
 }
 
-function shareList(id) {
-  const url = new URL(location.href);
-  url.searchParams.set('list', id);
+function offerLink(url, message) {
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(url.href)
-      .then(() => showToast('Shareable link copied!'))
-      .catch(() => showToast('Copy failed. Long-press/copy the URL.'));
+    navigator.clipboard.writeText(url)
+      .then(() => showToast(message))
+      .catch(() => prompt('Copy this link:', url));
   } else {
-    prompt('Copy this link:', url.href);
+    prompt('Copy this link:', url);
   }
+}
+
+// One list, and only that list.
+function shareList(id) {
+  const token = store.shareToken(id);
+  if (!token) return;
+  offerLink(publicUrl('join', token), 'Link copied — it opens this list only.');
+}
+
+// The whole index, and therefore every list in it. A different blast radius from
+// sharing a list, so it says so.
+function copyDeviceLink() {
+  offerLink(publicUrl('link', linkSecret), 'Device link copied — it carries every list. Keep it to your own devices.');
 }
 
 function deleteList(id) {
   if (!confirm('Delete this list (and all its items)?')) return;
-  yLists.delete(id);
-  // Also clean up items
-  const itemKeys = [];
-  yItems.forEach((item, key) => {
-    if (item.list_id === id) itemKeys.push(key);
-  });
-  itemKeys.forEach(k => yItems.delete(k));
+  store.deleteList(id);
 }
 
 function renameList(id, newName) {
-  const name = (newName || '').trim() || 'Untitled list';
-  const l = yLists.get(id);
-  if (l) yLists.set(id, { ...l, name, updated_at: nowIso() });
+  store.renameList(id, (newName || '').trim() || 'Untitled list');
 }
 
-function renderLists(lists) {
+function createListCard(list) {
+  const id = list.id;
+
+  const card = document.createElement('div');
+  card.className = 'card-list group bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-300 relative cursor-pointer';
+  card.dataset.id = id;
+
+  const rowTop = document.createElement('div');
+  rowTop.className = 'row-top flex items-center justify-start gap-2 mb-4';
+
+  const drag = document.createElement('div');
+  drag.className = 'drag p-2 rounded-lg cursor-grab text-outline-variant active:cursor-grabbing hover:text-primary hover:bg-surface-container transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary';
+  drag.tabIndex = 0;
+  drag.setAttribute('aria-label', 'Reorder list (Press Space to grab)');
+  drag.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
+
+  const title = document.createElement('h3');
+  title.className = 'font-headline-sm text-[20px] text-on-surface flex-1 truncate font-bold outline-none focus:bg-surface-container-high rounded px-1 -ml-1';
+  title.title = 'Double-click to rename. Enter to save.';
+  title.contentEditable = 'false';
+  title.addEventListener('dblclick', () => {
+    title.contentEditable = 'true';
+    title.focus();
+    document.execCommand('selectAll', false, null);
+  });
+  title.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); title.blur(); }
+    if (e.key === 'Escape') { title.contentEditable = 'false'; title.blur(); }
+  });
+  title.addEventListener('blur', () => {
+    if (title.isContentEditable) {
+      title.contentEditable = 'false';
+      renameList(id, title.textContent || '');
+    }
+  });
+
+  rowTop.append(drag, title);
+
+  const meta = document.createElement('div');
+  meta.className = 'muted flex items-center gap-2 text-on-surface-variant text-[12px] font-medium mb-6';
+  const countEl = document.createElement('span');
+  countEl.className = 'flex items-center gap-1';
+  const updatedEl = document.createElement('span');
+  updatedEl.className = 'flex items-center gap-1';
+  const dot = document.createElement('span');
+  dot.className = 'h-1 w-1 bg-outline-variant rounded-full';
+  meta.append(countEl, dot, updatedEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions flex items-center gap-2 pt-4 border-t border-outline-variant/20';
+
+  const openBtn = document.createElement('button');
+  openBtn.className = 'icon-btn primary flex-1 py-2 bg-primary-container text-on-primary-container rounded-lg font-medium text-center hover:brightness-105 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px] border-transparent';
+  openBtn.textContent = 'Open';
+  openBtn.onclick = (e) => { e.stopPropagation(); openList(id); };
+
+  const shareBtnNode = document.createElement('button');
+  shareBtnNode.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
+  shareBtnNode.innerHTML = '<span class="material-symbols-outlined">ios_share</span>';
+  shareBtnNode.onclick = (e) => { e.stopPropagation(); shareList(id); };
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
+  deleteBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+  deleteBtn.onclick = (e) => { e.stopPropagation(); deleteList(id); };
+
+  actions.append(openBtn, shareBtnNode, deleteBtn);
+
+  card.onclick = (e) => {
+    if (!e.target.closest('button') && !e.target.closest('h3') && !e.target.closest('.drag')) {
+      openList(id);
+    }
+  };
+
+  card.append(rowTop, meta, actions);
+  card.refs = { title, countEl, updatedEl };
+  return card;
+}
+
+function updateListCard(card, list) {
+  const { title, countEl, updatedEl } = card.refs;
+
+  // Leave the heading alone while it is being edited, or the caret jumps.
+  const name = list.name || (list.loaded ? 'Untitled list' : '…');
+  if (!title.isContentEditable && title.textContent !== name) title.textContent = name;
+
+  const count = `${list.itemCount} items`;
+  if (countEl.dataset.value !== count) {
+    countEl.dataset.value = count;
+    countEl.innerHTML = `<span class="material-symbols-outlined text-[14px]">list</span> ${count}`;
+  }
+
+  const updated = fmt(list.updatedAt);
+  if (updatedEl.dataset.value !== updated) {
+    updatedEl.dataset.value = updated;
+    updatedEl.innerHTML = `<span class="material-symbols-outlined text-[14px]">history</span> ${updated}`;
+  }
+
+  card.dataset.order = list.order;
+}
+
+function renderLists() {
   if (!listsGrid) return;
-  listsGrid.innerHTML = '';
+  const lists = store.lists();
 
   if (!lists.length) {
-    const empty = document.createElement('div');
-    empty.className = 'col-span-full border-2 border-dashed border-outline-variant/40 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[220px]';
-    empty.innerHTML = `
+    if (!emptyStateEl) {
+      emptyStateEl = document.createElement('div');
+      emptyStateEl.className = 'col-span-full border-2 border-dashed border-outline-variant/40 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[220px]';
+      emptyStateEl.innerHTML = `
       <div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-outline-variant">
         <span class="material-symbols-outlined text-[32px]">list_alt</span>
       </div>
       <p class="mt-3 font-label-md text-outline">No lists yet. Create your first list.</p>`;
-    listsGrid.appendChild(empty);
-    return;
+    }
+    if (!emptyStateEl.isConnected) listsGrid.appendChild(emptyStateEl);
+  } else if (emptyStateEl?.isConnected) {
+    emptyStateEl.remove();
   }
 
-  for (const l of lists) {
-    const card = document.createElement('div');
-    card.className = 'card-list group bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-300 relative cursor-pointer';
-    card.dataset.id = l.id;
-
-    // Top row
-    const rowTop = document.createElement('div');
-    rowTop.className = 'row-top flex items-center justify-start gap-2 mb-4';
-
-    const drag = document.createElement('div');
-    drag.className = 'drag p-2 rounded-lg cursor-grab text-outline-variant active:cursor-grabbing hover:text-primary hover:bg-surface-container transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary';
-    drag.tabIndex = 0;
-    drag.setAttribute('aria-label', 'Reorder list (Press Space to grab)');
-    drag.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
-
-    const title = document.createElement('h3');
-    title.className = 'font-headline-sm text-[20px] text-on-surface flex-1 truncate font-bold outline-none focus:bg-surface-container-high rounded px-1 -ml-1';
-    title.textContent = l.name || 'Untitled list';
-    title.title = 'Double-click to rename. Enter to save.';
-    title.contentEditable = 'false';
-    title.addEventListener('dblclick', () => {
-      title.contentEditable = 'true';
-      title.focus();
-      document.execCommand('selectAll', false, null);
-    });
-    title.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); title.blur(); }
-      if (e.key === 'Escape') { title.contentEditable = 'false'; title.blur(); }
-    });
-    title.addEventListener('blur', () => {
-      if (title.isContentEditable) {
-        title.contentEditable = 'false';
-        renameList(l.id, title.textContent || '');
-      }
-    });
-
-    rowTop.append(drag, title);
-
-    const meta = document.createElement('div');
-    meta.className = 'muted flex items-center gap-2 text-on-surface-variant text-[12px] font-medium mb-6';
-    // Count items
-    let itemCount = 0;
-    yItems.forEach(i => { if (i.list_id === l.id) itemCount++; });
-    meta.innerHTML = `
-      <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">list</span> ${itemCount} items</span>
-      <span class="h-1 w-1 bg-outline-variant rounded-full"></span>
-      <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">history</span> ${fmt(l.updated_at)}</span>
-    `;
-
-    const actions = document.createElement('div');
-    actions.className = 'actions flex items-center gap-2 pt-4 border-t border-outline-variant/20';
-
-    const openBtn = document.createElement('button');
-    openBtn.className = 'icon-btn primary flex-1 py-2 bg-primary-container text-on-primary-container rounded-lg font-medium text-center hover:brightness-105 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px] border-transparent';
-    openBtn.textContent = 'Open';
-    openBtn.onclick = (e) => { 
-        e.stopPropagation(); 
-        const url = new URL(location.href);
-        url.searchParams.set('list', l.id);
-        location.href = url.href; 
-    };
-
-    const shareBtnNode = document.createElement('button');
-    shareBtnNode.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
-    shareBtnNode.innerHTML = '<span class="material-symbols-outlined">ios_share</span>';
-    shareBtnNode.onclick = (e) => { e.stopPropagation(); shareList(l.id); };
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
-    deleteBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
-    deleteBtn.onclick = (e) => { e.stopPropagation(); deleteList(l.id); };
-
-    actions.append(openBtn, shareBtnNode, deleteBtn);
-
-    // Open by clicking card
-    card.onclick = (e) => { 
-        if (!e.target.closest('button') && !e.target.closest('h3') && !e.target.closest('.drag')) {
-            const url = new URL(location.href);
-            url.searchParams.set('list', l.id);
-            location.href = url.href;
-        }
-    };
-
-    card.append(rowTop, meta, actions);
-    listsGrid.appendChild(card);
-  }
-
-  enableLongPressReorder(listsGrid, '.card-list', persistListOrder, '.drag');
-  enableKeyboardReorder(listsGrid, '.card-list', persistListOrder, '.drag');
+  reconcile(listsGrid, lists, listRows, createListCard, updateListCard);
   attachRipples();
-}
-
-function persistListOrder() {
-  const cards = [...listsGrid.querySelectorAll('.card-list')];
-  let base = Date.now() + 1000;
-  for (let i = 0; i < cards.length; i++) {
-    const id = cards[i].dataset.id;
-    const l = yLists.get(id);
-    if (l) yLists.set(id, { ...l, order_index: base - i });
-  }
 }
 
 /* ============================================================
    LIST VIEW (items)
    ============================================================ */
+const itemRows = new Map();
+
 function loadListName() {
-  const l = yLists.get(listId);
-  if (l) {
-      if (listNameEl) listNameEl.value = l.name || 'Shopping List';
-      if (currentListTitle) currentListTitle.textContent = l.name || 'Shopping List';
-  }
+  if (listNameEl) setInputValue(listNameEl, store.listName(listId));
 }
 
 function saveListName() {
-  const name = (listNameEl?.value || '').trim() || 'Shopping List';
-  const l = yLists.get(listId);
-  if (l) {
-      yLists.set(listId, { ...l, name, updated_at: nowIso() });
-      if (currentListTitle) currentListTitle.textContent = name;
-  }
+  store.renameList(listId, (listNameEl?.value || '').trim() || 'Shopping List');
 }
 
-function sortItems(arr) {
-  return arr.slice().sort((a,b) => {
-    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
-    const oi = (b.order_index ?? 0) - (a.order_index ?? 0);
-    if (oi !== 0) return oi;
-    return (new Date(b.created_at) - new Date(a.created_at));
+function createItemRow(item) {
+  const id = item.id;
+
+  const li = document.createElement('li');
+  li.className = 'card group animate-slide-in flex flex-col md:flex-row md:items-center justify-between p-4 mb-3 bg-surface-container-lowest dark:bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all duration-200 relative';
+  li.dataset.id = id;
+
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-3 flex-1 overflow-hidden min-w-0';
+
+  const label = document.createElement('label');
+  label.className = 'relative flex items-center justify-center cursor-pointer flex-shrink-0';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'peer appearance-none w-6 h-6 border-2 border-outline-variant rounded-full checked:bg-primary checked:border-primary transition-colors cursor-pointer';
+  cb.onchange = () => toggleDone(id);
+
+  const checkIcon = document.createElement('span');
+  checkIcon.className = 'absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none text-on-primary';
+  checkIcon.innerHTML = '<span class="material-symbols-outlined text-[16px] font-bold">check</span>';
+
+  label.append(cb, checkIcon);
+
+  const textContainer = document.createElement('div');
+  textContainer.className = 'flex flex-col flex-1 min-w-0 pr-2';
+
+  const text = document.createElement('input');
+  text.className = 'text w-full bg-transparent border-none p-0 focus:ring-0 text-on-surface font-body-lg transition-all truncate';
+  text.setAttribute('enterkeyhint', 'enter');
+  text.autocomplete = 'off';
+  // Sync per keystroke rather than on blur: the store narrows it to the characters
+  // that actually changed, which is what lets two people type in the same row.
+  text.addEventListener('input', () => editItem(id, text.value));
+  text.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      addEmptyItemAfter(id);
+    }
   });
+
+  const meta = document.createElement('span');
+  meta.className = 'metaRow text-[11px] text-on-surface-variant font-medium mt-0.5 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-300';
+
+  textContainer.append(text, meta);
+  row.append(label, textContainer);
+
+  const rightContainer = document.createElement('div');
+  rightContainer.className = 'flex items-center justify-between md:justify-end gap-1 mt-3 md:mt-0 pt-3 md:pt-0 border-t border-outline-variant/20 md:border-t-0 flex-shrink-0';
+
+  const mobileMeta = document.createElement('span');
+  mobileMeta.className = 'text-[11px] text-on-surface-variant font-medium md:hidden';
+
+  const actionsContainer = document.createElement('div');
+  actionsContainer.className = 'flex items-center gap-1';
+
+  const del = document.createElement('button');
+  del.className = 'w-10 h-10 flex items-center justify-center rounded-full text-outline-variant hover:text-error hover:bg-error-container/20 transition-colors';
+  del.innerHTML = '<span class="material-symbols-outlined text-[20px]">delete</span>';
+  del.onclick = () => store.deleteItem(listId, id);
+
+  const handle = document.createElement('div');
+  handle.className = 'drag handle p-2 rounded-lg text-outline-variant hover:bg-surface-container hover:text-primary transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-primary focus:outline-none';
+  handle.tabIndex = 0;
+  handle.setAttribute('aria-label', 'Reorder item (Press Space to grab)');
+  handle.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
+
+  actionsContainer.append(del, handle);
+  rightContainer.append(mobileMeta, actionsContainer);
+
+  li.append(row, rightContainer);
+  li.refs = { cb, text, meta, mobileMeta };
+  return li;
 }
 
-function loadItemsAndRender() {
-  const allItems = Array.from(yItems.values());
-  const listItems = allItems.filter(i => i.list_id === listId);
-  renderItems(sortItems(listItems));
-}
+function updateItemRow(li, item) {
+  const { cb, text, meta, mobileMeta } = li.refs;
+  const done = item.done;
 
-function renderItems(items) {
-  if (!remainingEl || !listEl) return;
-  remainingEl.textContent = `${items.filter(i => !i.done).length} remaining`;
-  listEl.innerHTML = '';
+  if (cb.checked !== done) cb.checked = done;
+  text.classList.toggle('line-through', done);
+  text.classList.toggle('text-on-surface-variant/50', done);
+  setInputValue(text, item.text);
 
-  for (const item of items) {
-    const li = document.createElement('li');
-    li.className = 'card group animate-slide-in flex flex-col md:flex-row md:items-center justify-between p-4 mb-3 bg-surface-container-lowest dark:bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all duration-200 relative';
-    li.dataset.id = item.id;
-
-    // Main Row
-    const row = document.createElement('div');
-    row.className = 'flex items-center gap-3 flex-1 overflow-hidden min-w-0';
-
-    // Checkbox
-    const label = document.createElement('label');
-    label.className = 'relative flex items-center justify-center cursor-pointer flex-shrink-0';
-    
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.className = 'peer appearance-none w-6 h-6 border-2 border-outline-variant rounded-full checked:bg-primary checked:border-primary transition-colors cursor-pointer';
-    cb.checked = !!item.done;
-    cb.onchange = () => toggleDoneOptimistic(item);
-
-    const checkIcon = document.createElement('span');
-    checkIcon.className = 'absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none text-on-primary';
-    checkIcon.innerHTML = '<span class="material-symbols-outlined text-[16px] font-bold">check</span>';
-    
-    label.append(cb, checkIcon);
-
-    // Text Content
-    const textContainer = document.createElement('div');
-    textContainer.className = 'flex flex-col flex-1 min-w-0 pr-2';
-
-    const text = document.createElement('input');
-    text.className = 'w-full bg-transparent border-none p-0 focus:ring-0 text-on-surface font-body-lg transition-all truncate ' + (item.done ? 'line-through text-on-surface-variant/50' : '');
-    text.value = item.text || '';
-    text.setAttribute('enterkeyhint', 'enter');
-    text.autocomplete = 'off';
-    text.onchange = () => editItemOptimistic(item, text.value);
-    text.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        addEmptyItemAfter(item);
-      }
-    });
-
-    const meta = document.createElement('span');
-    meta.className = 'metaRow text-[11px] text-on-surface-variant font-medium mt-0.5 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-300';
-    meta.textContent = `Added: ${fmt(item.created_at)}`;
-
-    textContainer.append(text, meta);
-    row.append(label, textContainer);
-
-    // Actions & Mobile Meta
-    const rightContainer = document.createElement('div');
-    rightContainer.className = 'flex items-center justify-between md:justify-end gap-1 mt-3 md:mt-0 pt-3 md:pt-0 border-t border-outline-variant/20 md:border-t-0 flex-shrink-0';
-
-    const mobileMeta = document.createElement('span');
-    mobileMeta.className = 'text-[11px] text-on-surface-variant font-medium md:hidden';
-    mobileMeta.textContent = `Added: ${fmt(item.created_at)}`;
-
-    const actionsContainer = document.createElement('div');
-    actionsContainer.className = 'flex items-center gap-1';
-
-    const del = document.createElement('button');
-    del.className = 'w-10 h-10 flex items-center justify-center rounded-full text-outline-variant hover:text-error hover:bg-error-container/20 transition-colors';
-    del.innerHTML = '<span class="material-symbols-outlined text-[20px]">delete</span>';
-    del.onclick = () => removeItemOptimistic(item);
-
-    const handle = document.createElement('div');
-    handle.className = 'drag handle p-2 rounded-lg text-outline-variant hover:bg-surface-container hover:text-primary transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-primary focus:outline-none';
-    handle.tabIndex = 0;
-    handle.setAttribute('aria-label', 'Reorder item (Press Space to grab)');
-    handle.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
-
-    actionsContainer.append(del, handle);
-    rightContainer.append(mobileMeta, actionsContainer);
-
-    li.append(row, rightContainer);
-    listEl.appendChild(li);
+  const added = `Added: ${fmt(item.createdAt)}`;
+  if (meta.textContent !== added) {
+    meta.textContent = added;
+    mobileMeta.textContent = added;
   }
 
-  enableLongPressReorder(listEl, '.card', persistItemsOrder, '.drag.handle');
-  enableKeyboardReorder(listEl, '.card', persistItemsOrder, '.drag.handle');
+  li.dataset.order = item.order;
+  // Reordering reads neighbours off the DOM, and done rows are grouped separately,
+  // so a row needs to advertise which group it is in.
+  li.dataset.done = done ? '1' : '0';
+}
+
+function renderItems() {
+  if (!remainingEl || !listEl) return;
+  const items = store.items(listId);
+  remainingEl.textContent = `${items.filter(i => !i.done).length} remaining`;
+  reconcile(listEl, items, itemRows, createItemRow, updateItemRow);
   attachRipples();
 }
 
@@ -419,83 +524,61 @@ function addFromTextarea() {
   if (!lines.length) return;
   inputEl.value = '';
   autoResizeTextarea(inputEl);
-
-  const baseTime = Date.now();
-  const now = nowIso();
-  
-  ydoc.transact(() => {
-    lines.forEach((t, idx) => {
-      const id = 'item-' + Math.random().toString(36).substring(2, 9);
-      yItems.set(id, {
-        id, list_id: listId, text: t, done: false,
-        created_at: now, updated_at: now,
-        order_index: baseTime + (lines.length - idx)
-      });
-    });
-  });
+  store.addItems(listId, lines);
 }
 
-function addEmptyItemAfter(item) {
-  const now = nowIso();
-  const order_index = (item.order_index ?? Date.now()) - 1;
-  const id = 'item-' + Math.random().toString(36).substring(2, 9);
-  
-  yItems.set(id, {
-    id, list_id: listId, text: '', done: false,
-    created_at: now, updated_at: now, order_index
-  });
-
-  setTimeout(() => {
-    const el = listEl.querySelector(`.card[data-id="${id}"] .text`);
-    if (el) el.focus();
-  }, 100); // small delay to let UI render
+function addEmptyItemAfter(id) {
+  const newItemId = store.addItemAfter(listId, id);
+  // The store notifies synchronously, so the row is already reconciled into the DOM
+  // by now — no timer needed to wait for it.
+  if (newItemId) itemRows.get(newItemId)?.refs.text.focus();
 }
 
-function toggleDoneOptimistic(item) {
-  const i = yItems.get(item.id);
-  if (i) yItems.set(item.id, { ...i, done: !i.done, updated_at: nowIso(), order_index: Date.now() });
+function toggleDone(id) {
+  store.toggleItem(listId, id);
 }
 
-function editItemOptimistic(item, newText) {
-  const i = yItems.get(item.id);
-  if (i) yItems.set(item.id, { ...i, text: newText, updated_at: nowIso() });
-}
-
-function removeItemOptimistic(item) {
-  yItems.delete(item.id);
+function editItem(id, value) {
+  store.setItemText(listId, id, value);
 }
 
 function clearAll() {
   if (!confirm('Clear all items?')) return;
-  const keys = [];
-  yItems.forEach((i, k) => { if (i.list_id === listId) keys.push(k); });
-  ydoc.transact(() => keys.forEach(k => yItems.delete(k)));
+  store.clearItems(listId);
 }
 
 function clearCompleted() {
-  const keys = [];
-  yItems.forEach((i, k) => { if (i.list_id === listId && i.done) keys.push(k); });
-  ydoc.transact(() => keys.forEach(k => yItems.delete(k)));
+  store.clearItems(listId, { doneOnly: true });
 }
 
-function persistItemsOrder() {
-  const cards = [...listEl.querySelectorAll('.card')];
-  let base = Date.now() + 1000;
-  ydoc.transact(() => {
-    for (let i = 0; i < cards.length; i++) {
-        const id = cards[i].dataset.id;
-        const it = yItems.get(id);
-        if (it) yItems.set(id, { ...it, order_index: base - i });
-    }
-  });
+/* ---------- Reordering ---------- */
+
+// The row's new neighbours in the DOM decide its key, and only that one row is
+// written. The old scheme renumbered every sibling on every drop, which is both
+// more writes than necessary and the most conflict-prone thing two devices can do.
+function neighbourKey(el, direction, sameGroup) {
+  const step = (node) => (direction === 'prev' ? node.previousElementSibling : node.nextElementSibling);
+  let sibling = step(el);
+  while (sibling && sameGroup && sibling.dataset.done !== el.dataset.done) sibling = step(sibling);
+  return sibling?.dataset.order ?? null;
 }
 
-function goHome() {
-  const url = new URL(location.href);
-  url.searchParams.delete('list');
-  history.pushState({}, '', url.href);
-  showHome();
+function persistOrder(el, move, { grouped = false } = {}) {
+  const lower = neighbourKey(el, 'prev', grouped);
+  const upper = neighbourKey(el, 'next', grouped);
+  try {
+    const key = move(el.dataset.id, lower, upper);
+    if (key) el.dataset.order = key;
+  } catch (err) {
+    // Only reachable if the DOM order and the stored keys disagree; the next
+    // render puts the row back where its key says it belongs.
+    console.warn('could not reorder', el.dataset.id, err);
+    if (listId) renderItems(); else renderLists();
+  }
 }
+
+const persistListOrder = (el) => persistOrder(el, (id, lo, hi) => store.moveList(id, lo, hi));
+const persistItemsOrder = (el) => persistOrder(el, (id, lo, hi) => store.moveItem(listId, id, lo, hi), { grouped: true });
 
 /* ============================================================
    Mode switch
@@ -503,13 +586,16 @@ function goHome() {
 function showHome() {
   if (homeSection) homeSection.classList.remove('hidden');
   if (listView) listView.classList.add('hidden');
-  loadLists();
+  renderLists();
 }
 function showListView() {
   if (homeSection) homeSection.classList.add('hidden');
   if (listView) listView.classList.remove('hidden');
+  // Rows belong to whichever list is open, so start the view from scratch.
+  itemRows.clear();
+  listEl.replaceChildren();
   loadListName();
-  loadItemsAndRender();
+  renderItems();
 }
 
 /* ============================================================
@@ -561,10 +647,11 @@ function enableLongPressReorder(container, itemSelector, onDrop, handleSelector 
   const pointerUp = () => {
     if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
     if (dragging) {
-      dragging.classList.remove('dragging');
+      const dropped = dragging;
+      dropped.classList.remove('dragging');
       container.removeEventListener('touchmove', preventScroll);
       dragging = null;
-      if (moved && typeof onDrop === 'function') onDrop();
+      if (moved && typeof onDrop === 'function') onDrop(dropped);
       moved = false;
     }
   };
@@ -581,11 +668,11 @@ function enableLongPressReorder(container, itemSelector, onDrop, handleSelector 
 
 function enableKeyboardReorder(container, itemSelector, onDrop, handleSelector = null) {
   if (!container) return;
-  
+
   container.addEventListener('keydown', (e) => {
     const handle = e.target.closest(handleSelector || itemSelector);
     if (!handle) return;
-    
+
     // Only proceed if the handle itself is focused
     if (e.target !== handle && !handle.contains(e.target)) return;
 
@@ -596,7 +683,7 @@ function enableKeyboardReorder(container, itemSelector, onDrop, handleSelector =
       e.preventDefault();
       if (item.classList.contains('keyboard-dragging')) {
         item.classList.remove('keyboard-dragging');
-        if (typeof onDrop === 'function') onDrop();
+        if (typeof onDrop === 'function') onDrop(item);
         handle.focus(); // keep focus
       } else {
         // Drop any existing
@@ -679,7 +766,8 @@ if (addBtn)             addBtn.onclick = addFromTextarea;
 if (clearAllBtn)        clearAllBtn.onclick = clearAll;
 if (clearCompletedBtn)  clearCompletedBtn.onclick = clearCompleted;
 if (shareBtn)           shareBtn.onclick = () => shareList(listId);
-if (listNameEl)         listNameEl.addEventListener('blur', saveListName);
+if (linkDeviceBtn)      linkDeviceBtn.onclick = copyDeviceLink;
+if (listNameEl)         listNameEl.addEventListener('input', saveListName);
 if (listNameEl)         listNameEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); listNameEl.blur(); }
 });
@@ -687,29 +775,42 @@ if (newListNameEl)      newListNameEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); createList(); }
 });
 
-/* ---------- Yjs Subscriptions ---------- */
-yLists.observe(() => {
-    if (!listId) loadLists();
-    else loadListName();
-});
+// Attached once, not per render — rows outlive a change now.
+enableLongPressReorder(listsGrid, '.card-list', persistListOrder, '.drag');
+enableKeyboardReorder(listsGrid, '.card-list', persistListOrder, '.drag');
+enableLongPressReorder(listEl, '.card', persistItemsOrder, '.drag.handle');
+enableKeyboardReorder(listEl, '.card', persistItemsOrder, '.drag.handle');
 
-yItems.observe(() => {
-    if (listId) loadItemsAndRender();
-});
-
-// Wait for IDB to sync initial state before rendering, or just render immediately.
-providerIdb.on('synced', () => {
-  listId = qs('list');
-  if (!listId) showHome();
-  else showListView();
-});
-// Fallback if IDB takes too long or is already synced
-setTimeout(() => {
-  // If neither view is explicitly shown yet (or if home is shown but URL has a list ID)
-  listId = qs('list');
-  if (listId && listView.classList.contains('hidden')) {
-    showListView();
-  } else if (!listId && homeSection.classList.contains('hidden')) {
-    showHome();
+/* ---------- Store subscription ---------- */
+store.onChange(() => {
+  if (listId) {
+    // A list can be removed on another device while it is open here.
+    if (!store.hasList(listId)) { goHome(); return; }
+    loadListName();
+    renderItems();
+  } else {
+    renderLists(); // names and item counts live on the cards
   }
-}, 200);
+});
+
+/* ---------- Start ---------- */
+store.open(linkSecret)
+  .then(() => {
+    // A shared list arrives as a token in the URL; adopt it and open it.
+    if (incomingShare) {
+      const share = Store.parseShareToken(incomingShare);
+      if (share) {
+        const joined = store.joinList(share.id, share.secret);
+        listId = share.id;
+        showListView();
+        showToast(joined ? 'List added.' : 'You already have that list.');
+        return;
+      }
+    }
+    if (listId && store.hasList(listId)) showListView();
+    else { listId = null; showHome(); }
+  })
+  .catch((err) => {
+    console.error('could not open the store:', err);
+    showHome();
+  });
