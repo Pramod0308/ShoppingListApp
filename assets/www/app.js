@@ -47,6 +47,8 @@ const newListNameEl     = document.getElementById('newListName');
 const createListBtn     = document.getElementById('createListBtn');
 const themeToggle       = document.getElementById('themeToggle');
 const linkDeviceBtn     = document.getElementById('linkDevice');
+const sortToggleBtn     = document.getElementById('sortToggle');
+const sortLabelEl       = document.getElementById('sortLabel');
 
 /* ---------- Elements (LIST VIEW) ---------- */
 const listView          = document.getElementById('listView');
@@ -146,6 +148,35 @@ if (toggleDatesBtn) {
     showTimestamps = !showTimestamps;
     localStorage.setItem('showTimestamps', showTimestamps ? '1' : '0');
     applyTimestampPref();
+  };
+}
+
+/* ============================================================
+   LIST ORDER
+
+   The control in the header was previously a label with no behaviour. Dragging a
+   card writes a manual key, so that ordering is only meaningful in 'custom' mode —
+   in 'recent' mode the handle is taken out of reach rather than left to produce a
+   reorder the user cannot see.
+   ============================================================ */
+let listSort = localStorage.getItem('listSort') === 'recent' ? 'recent' : 'custom';
+
+function applySortPref() {
+  if (sortLabelEl) sortLabelEl.textContent = listSort === 'recent' ? 'Recent' : 'Custom';
+  if (sortToggleBtn) {
+    sortToggleBtn.title = listSort === 'recent'
+      ? 'Sorted by most recently updated. Switch to your own order.'
+      : 'Sorted by your own order. Switch to most recently updated.';
+  }
+}
+applySortPref();
+
+if (sortToggleBtn) {
+  sortToggleBtn.onclick = () => {
+    listSort = listSort === 'recent' ? 'custom' : 'recent';
+    localStorage.setItem('listSort', listSort);
+    applySortPref();
+    renderLists();
   };
 }
 
@@ -331,12 +362,17 @@ function createListCard(list) {
   };
 
   card.append(rowTop, meta, actions);
-  card.refs = { title, countEl, updatedEl };
+  card.refs = { title, countEl, updatedEl, drag };
   return card;
 }
 
 function updateListCard(card, list) {
-  const { title, countEl, updatedEl } = card.refs;
+  const { title, countEl, updatedEl, drag } = card.refs;
+
+  // Dragging only means anything when the manual order is the one on screen.
+  const draggable = listSort === 'custom';
+  drag.classList.toggle('hidden', !draggable);
+  drag.tabIndex = draggable ? 0 : -1;
 
   // Leave the heading alone while it is being edited, or the caret jumps.
   const name = list.name || (list.loaded ? 'Untitled list' : '…');
@@ -359,7 +395,7 @@ function updateListCard(card, list) {
 
 function renderLists() {
   if (!listsGrid) return;
-  const lists = store.lists();
+  const lists = store.lists(listSort);
 
   if (!lists.length) {
     if (!emptyStateEl) {

@@ -28,16 +28,13 @@
     <link rel="stylesheet" href="fonts/fonts.css">
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-background text-on-surface min-h-screen pb-32">
+<body class="bg-background text-on-surface min-h-screen pb-12">
 
     <!-- HOME VIEW -->
     <div id="home">
         <header class="fixed top-0 w-full z-50 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-b border-outline-variant/30 dark:border-outline/20">
             <div class="flex justify-between items-center px-4 h-16 w-full max-w-screen-xl mx-auto">
                 <div class="flex items-center gap-4">
-                    <button class="p-2 text-primary dark:text-primary-fixed hover:bg-primary-container/10 transition-colors active:scale-95 duration-200" aria-label="Menu">
-                        <span class="material-symbols-outlined">menu</span>
-                    </button>
                     <h1 class="font-display-lg text-[24px] font-bold tracking-tight text-primary dark:text-primary-fixed">ShopNest</h1>
                 </div>
                 <div class="flex items-center gap-2">
@@ -71,9 +68,9 @@
             <section>
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-[20px] font-bold text-on-surface">Your Lists</h2>
-                    <button class="flex items-center gap-1 text-primary text-[14px] font-medium">
+                    <button id="sortToggle" class="flex items-center gap-1 text-primary text-[14px] font-medium hover:bg-primary-container/10 rounded-lg px-2 py-1 transition-colors active:scale-95" title="Change how lists are ordered">
                         <span class="material-symbols-outlined text-[18px]">sort</span>
-                        <span>Recent</span>
+                        <span id="sortLabel">Recent</span>
                     </button>
                 </div>
                 <div id="listsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -82,21 +79,6 @@
             </section>
         </main>
         
-        <!-- Bottom Navigation Shell -->
-        <nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-safe px-4 bg-surface/70 dark:bg-on-surface/70 backdrop-blur-xl border-t border-outline-variant/30 dark:border-outline/20 z-50 rounded-t-xl shadow-lg">
-            <a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 transition-all active:scale-90" href="#">
-                <span class="material-symbols-outlined">format_list_bulleted</span>
-                <span class="text-[12px] font-medium">Lists</span>
-            </a>
-            <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
-                <span class="material-symbols-outlined">archive</span>
-                <span class="text-[12px] font-medium">Archive</span>
-            </a>
-            <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary transition-all active:scale-90" href="#">
-                <span class="material-symbols-outlined">settings</span>
-                <span class="text-[12px] font-medium">Settings</span>
-            </a>
-        </nav>
     </div>
 
     <!-- LIST DETAILS VIEW -->

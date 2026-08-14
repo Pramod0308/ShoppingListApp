@@ -161,8 +161,9 @@ previous build after an app update.
 
 ## Known gaps
 
-- The hamburger menu, the "Recent" sort control and the Archive / Settings tabs in
-  the bottom navigation are not wired to anything.
+- There is no archive: deleting a list is the only way to get rid of it. The
+  Archive and Settings tabs that used to sit in the bottom navigation were removed
+  because nothing was behind them; the mockups for them are in `design/mockups/`.
 - The signalling servers in `sync-config.js` are the public y-webrtc demo servers.
   Sync will be unreliable until you run your own.
 - No LICENSE file; the repository is currently all-rights-reserved by default.

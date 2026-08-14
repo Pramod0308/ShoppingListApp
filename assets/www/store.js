@@ -134,7 +134,10 @@ export class Store {
   /* ---------- Reading ---------- */
 
   /// Plain snapshots, so nothing outside this module has to know about Yjs types.
-  lists() {
+  /// `by` is 'custom' for the order the user dragged them into, or 'recent' for
+  /// most recently touched first. Creating, renaming and editing items all stamp
+  /// the index entry, so 'recent' tracks activity rather than just renames.
+  lists(by = 'custom') {
     const out = [];
     this.#index.forEach((entry, id) => {
       if (!(entry instanceof Y.Map)) return;
@@ -148,6 +151,12 @@ export class Store {
         loaded: !!handle,
       });
     });
+
+    if (by === 'recent') {
+      // Fall back to the manual key so the order stays total when two entries
+      // carry the same timestamp.
+      return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : compare(a, b)));
+    }
     return out.sort(compare);
   }
 
