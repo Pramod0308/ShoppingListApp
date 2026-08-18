@@ -1,0 +1,31 @@
+{
+  "name": "shopnest-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build tooling for the ShopNest web bundle shipped in assets/www.",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:vendor && npm run build:css && npm run build:sw",
+    "build:vendor": "esbuild web-src/vendor-entry.js --bundle --format=esm --platform=browser --target=es2020 --minify --define:global=globalThis --inject:web-src/node-shims.js --outfile=assets/www/vendor/sync.js",
+    "build:css": "tailwindcss -c tailwind.config.js -i web-src/styles.css -o assets/www/styles.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i web-src/styles.css -o assets/www/styles.css --watch",
+    "fonts": "node tools/fetch-fonts.mjs",
+    "serve": "node tools/serve.mjs",
+    "test": "node tools/order-key.test.mjs && node tools/doc-model.test.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "build:sw": "node tools/make-sw.mjs"
+  },
+  "dependencies": {
+    "y-indexeddb": "^9.0.12",
+    "y-webrtc": "^10.3.0",
+    "yjs": "^13.6.18"
+  },
+  "devDependencies": {
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.9",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.24.0",
+    "process": "^0.11.10",
+    "tailwindcss": "^3.4.14"
+  }
+}

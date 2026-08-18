@@ -1,0 +1,58 @@
+name: Deploy Web App
+
+# Publishes assets/www — the same bundle the mobile shell serves — to GitHub Pages.
+# Enable it once under Settings → Pages → Source: GitHub Actions.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # Building here rather than trusting the committed copy means the published
+      # site cannot be a stale bundle; the APK workflow is what checks the two match.
+      - name: Build Bundle
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: assets/www
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

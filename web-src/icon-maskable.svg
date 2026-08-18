@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Maskable variant: same mark, but the glyph is kept inside the safe zone so
+       platforms can crop this to a circle or a squircle without clipping it.
+       Source for assets/www/icons/icon-maskable-512.png — `npm run icons`. -->
+  <rect width="512" height="512" fill="#4648d4"/>
+  <g transform="translate(256 256) scale(0.72) translate(-256 -256)"
+     fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M232 176 H392" stroke-width="26"/>
+    <path d="M232 256 H392" stroke-width="26"/>
+    <path d="M232 336 H352" stroke-width="26"/>
+    <path d="M136 178 L155 197 L192 152" stroke-width="24"/>
+    <circle cx="160" cy="256" r="28" stroke-width="22"/>
+    <circle cx="160" cy="336" r="28" stroke-width="22"/>
+  </g>
+</svg>
