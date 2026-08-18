@@ -4,99 +4,150 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Styles */
-body { 
-    font-family: 'Geist', sans-serif; 
+/* ============================================================
+   COLOUR TOKENS
+
+   Channel triplets so Tailwind's opacity modifiers work (bg-surface/70).
+   Dark mode overrides the variables once, rather than every element needing a
+   dark: variant — which is why the old page body stayed light behind a dark
+   header. Neutrals are very slightly cool; one accent carries the whole UI.
+   ============================================================ */
+:root {
+  --bg: 248 248 250;
+  --surface: 255 255 255;
+  --raised: 242 242 245;
+  --line: 229 229 234;
+  --ink: 19 19 22;
+  --muted: 113 113 125;
+  --faint: 161 161 172;
+  --accent: 99 102 241;
+  --accent-ink: 255 255 255;
+  --accent-soft: 238 240 255;
+  --danger: 225 60 60;
+  --danger-soft: 254 240 240;
 }
+
+.dark {
+  --bg: 9 9 11;
+  --surface: 21 21 25;
+  --raised: 30 30 35;
+  --line: 39 39 46;
+  --ink: 244 244 246;
+  --muted: 145 145 158;
+  --faint: 106 106 118;
+  --accent: 129 131 247;
+  --accent-ink: 12 12 16;
+  --accent-soft: 32 32 56;
+  --danger: 248 113 113;
+  --danger-soft: 48 24 26;
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+body {
+  font-family: 'Geist', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  /* Keeps content clear of the home indicator and the notch on phones. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 .material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
 }
-.neumorphic-btn {
-    box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.4), inset -1px -1px 0px rgba(0, 0, 0, 0.05);
+
+/* Slightly heavier optical weight for the small icons that sit inside buttons. */
+.icon-sm {
+  font-size: 20px;
+  line-height: 1;
 }
-.glass-panel {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+.row-press {
+  transition: background-color 0.15s ease, transform 0.15s ease;
 }
-.item-row, .card-list {
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease-out;
+.row-press:active {
+  transform: scale(0.995);
 }
-.dragging, .keyboard-dragging {
-    opacity: 0.5;
-    transform: scale(1.02);
-    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
-    z-index: 100;
+
+.dragging,
+.keyboard-dragging {
+  opacity: 0.9;
+  transform: scale(1.01);
+  box-shadow: theme('boxShadow.lift');
+  z-index: 100;
 }
 .keyboard-dragging {
-    border: 2px solid theme('colors.primary');
-}
-
-/* Animations */
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-.animate-slide-in {
-    animation: slideIn 0.3s ease-out forwards;
-}
-
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translate(-50%, 20px);
-    }
-    to {
-        opacity: 1;
-        transform: translate(-50%, 0);
-    }
-}
-.animate-slide-up {
-    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-/* Scrollbar customization */
-::-webkit-scrollbar {
-    width: 6px;
-}
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-::-webkit-scrollbar-thumb {
-    background: rgba(118, 117, 134, 0.2);
-    border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(118, 117, 134, 0.4);
+  outline: 2px solid theme('colors.accent');
+  outline-offset: -1px;
 }
 
 /* Hide Meta logic */
 body.hide-meta .metaRow {
-    display: none !important;
+  display: none !important;
 }
 
+/* ============================================================
+   ANIMATION
+   Short and shallow — long slides read as sluggish on a phone.
+   ============================================================ */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in {
+  animation: slideIn 0.18s ease-out forwards;
+}
 
-/* Material Ripple Effect */
+@keyframes slideUp {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.animate-slide-up {
+  animation: slideUp 0.22s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-in,
+  .animate-slide-up,
+  .ripple {
+    animation: none;
+  }
+  .row-press {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--faint) / 0.4);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--faint) / 0.7); }
+
+/* ============================================================
+   RIPPLE
+   ============================================================ */
 .ripple {
-    position: absolute;
-    border-radius: 50%;
-    background-color: currentColor;
-    opacity: 0.15;
-    animation: ripple-anim 0.55s linear;
-    pointer-events: none;
+  position: absolute;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: 0.12;
+  animation: ripple-anim 0.5s linear;
+  pointer-events: none;
 }
 @keyframes ripple-anim {
-    to {
-        transform: scale(2.5);
-        opacity: 0;
-    }
+  to { transform: scale(2.5); opacity: 0; }
 }
 button, .card-list {
-    position: relative;
-    overflow: hidden;
+  position: relative;
+  overflow: hidden;
 }

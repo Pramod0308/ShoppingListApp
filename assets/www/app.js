@@ -70,6 +70,22 @@ const fmt = (iso) => {
   const d = iso ? new Date(iso) : null;
   return d && !isNaN(d.getTime()) ? d.toLocaleString() : '…';
 };
+// Compact ages for the row meta. A full timestamp fills the line on a phone and
+// says less than "2m ago" does.
+const ago = (iso) => {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return '';
+  const secs = Math.round((Date.now() - d.getTime()) / 1000);
+  if (secs < 60) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+};
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const root   = document.documentElement;
 
 /* ============================================================
@@ -291,20 +307,20 @@ function createListCard(list) {
   const id = list.id;
 
   const card = document.createElement('div');
-  card.className = 'card-list group bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-300 relative cursor-pointer';
+  card.className = 'card-list row-press group flex items-center gap-1 bg-surface border border-line rounded-xl pl-1 pr-1.5 py-1.5 hover:bg-raised cursor-pointer';
   card.dataset.id = id;
 
   const rowTop = document.createElement('div');
-  rowTop.className = 'row-top flex items-center justify-start gap-2 mb-4';
+  rowTop.className = 'row-top flex items-center gap-1 min-w-0 flex-1';
 
   const drag = document.createElement('div');
-  drag.className = 'drag p-2 rounded-lg cursor-grab text-outline-variant active:cursor-grabbing hover:text-primary hover:bg-surface-container transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary';
+  drag.className = 'drag w-7 h-9 shrink-0 flex items-center justify-center rounded-md cursor-grab text-faint active:cursor-grabbing hover:text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent';
   drag.tabIndex = 0;
   drag.setAttribute('aria-label', 'Reorder list (Press Space to grab)');
-  drag.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
+  drag.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
   const title = document.createElement('h3');
-  title.className = 'font-headline-sm text-[20px] text-on-surface flex-1 truncate font-bold outline-none focus:bg-surface-container-high rounded px-1 -ml-1';
+  title.className = 'text-[15px] font-medium text-ink truncate outline-none focus:bg-raised rounded px-1 -mx-1';
   title.title = 'Double-click to rename. Enter to save.';
   title.contentEditable = 'false';
   title.addEventListener('dblclick', () => {
@@ -323,34 +339,37 @@ function createListCard(list) {
     }
   });
 
-  rowTop.append(drag, title);
+  const textCol = document.createElement('div');
+  textCol.className = 'flex flex-col min-w-0 flex-1 py-1';
+  textCol.append(title);
+  rowTop.append(drag, textCol);
 
   const meta = document.createElement('div');
-  meta.className = 'muted flex items-center gap-2 text-on-surface-variant text-[12px] font-medium mb-6';
+  meta.className = 'muted flex items-center gap-1.5 text-faint text-[12px] leading-tight';
   const countEl = document.createElement('span');
-  countEl.className = 'flex items-center gap-1';
+  countEl.className = '';
   const updatedEl = document.createElement('span');
-  updatedEl.className = 'flex items-center gap-1';
+  updatedEl.className = 'metaRow truncate';
   const dot = document.createElement('span');
-  dot.className = 'h-1 w-1 bg-outline-variant rounded-full';
+  dot.className = 'metaRow h-0.5 w-0.5 bg-faint rounded-full shrink-0';
   meta.append(countEl, dot, updatedEl);
 
   const actions = document.createElement('div');
-  actions.className = 'actions flex items-center gap-2 pt-4 border-t border-outline-variant/20';
+  actions.className = 'actions flex items-center gap-0.5 shrink-0';
 
   const openBtn = document.createElement('button');
-  openBtn.className = 'icon-btn primary flex-1 py-2 bg-primary-container text-on-primary-container rounded-lg font-medium text-center hover:brightness-105 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px] border-transparent';
+  openBtn.className = 'icon-btn sr-only';
   openBtn.textContent = 'Open';
   openBtn.onclick = (e) => { e.stopPropagation(); openList(id); };
 
   const shareBtnNode = document.createElement('button');
-  shareBtnNode.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
-  shareBtnNode.innerHTML = '<span class="material-symbols-outlined">ios_share</span>';
+  shareBtnNode.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
+  shareBtnNode.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">ios_share</span>';
   shareBtnNode.onclick = (e) => { e.stopPropagation(); shareList(id); };
 
   const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'icon-btn p-2 rounded-lg border border-outline-variant/30 text-error hover:bg-error-container/20 transition-colors active:scale-95 flex items-center justify-center gap-1 text-[14px]';
-  deleteBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+  deleteBtn.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-danger hover:bg-danger-soft transition-colors';
+  deleteBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">delete</span>';
   deleteBtn.onclick = (e) => { e.stopPropagation(); deleteList(id); };
 
   actions.append(openBtn, shareBtnNode, deleteBtn);
@@ -361,7 +380,8 @@ function createListCard(list) {
     }
   };
 
-  card.append(rowTop, meta, actions);
+  textCol.append(meta);
+  card.append(rowTop, actions);
   card.refs = { title, countEl, updatedEl, drag };
   return card;
 }
@@ -378,16 +398,13 @@ function updateListCard(card, list) {
   const name = list.name || (list.loaded ? 'Untitled list' : '…');
   if (!title.isContentEditable && title.textContent !== name) title.textContent = name;
 
-  const count = `${list.itemCount} items`;
-  if (countEl.dataset.value !== count) {
-    countEl.dataset.value = count;
-    countEl.innerHTML = `<span class="material-symbols-outlined text-[14px]">list</span> ${count}`;
-  }
+  const count = plural(list.itemCount, 'item');
+  if (countEl.textContent !== count) countEl.textContent = count;
 
-  const updated = fmt(list.updatedAt);
-  if (updatedEl.dataset.value !== updated) {
-    updatedEl.dataset.value = updated;
-    updatedEl.innerHTML = `<span class="material-symbols-outlined text-[14px]">history</span> ${updated}`;
+  const updated = ago(list.updatedAt);
+  if (updatedEl.textContent !== updated) {
+    updatedEl.textContent = updated;
+    updatedEl.title = fmt(list.updatedAt);
   }
 
   card.dataset.order = list.order;
@@ -400,12 +417,10 @@ function renderLists() {
   if (!lists.length) {
     if (!emptyStateEl) {
       emptyStateEl = document.createElement('div');
-      emptyStateEl.className = 'col-span-full border-2 border-dashed border-outline-variant/40 rounded-2xl p-5 flex flex-col items-center justify-center min-h-[220px]';
+      emptyStateEl.className = 'flex flex-col items-center justify-center gap-2 py-14 text-center';
       emptyStateEl.innerHTML = `
-      <div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-outline-variant">
-        <span class="material-symbols-outlined text-[32px]">list_alt</span>
-      </div>
-      <p class="mt-3 font-label-md text-outline">No lists yet. Create your first list.</p>`;
+      <span class="material-symbols-outlined text-[28px] text-faint">list_alt</span>
+      <p class="text-[13px] text-faint">Nothing here yet</p>`;
     }
     if (!emptyStateEl.isConnected) listsGrid.appendChild(emptyStateEl);
   } else if (emptyStateEl?.isConnected) {
@@ -433,31 +448,31 @@ function createItemRow(item) {
   const id = item.id;
 
   const li = document.createElement('li');
-  li.className = 'card group animate-slide-in flex flex-col md:flex-row md:items-center justify-between p-4 mb-3 bg-surface-container-lowest dark:bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all duration-200 relative';
+  li.className = 'card row-press group animate-slide-in flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-surface border border-line rounded-xl hover:bg-raised';
   li.dataset.id = id;
 
   const row = document.createElement('div');
-  row.className = 'flex items-center gap-3 flex-1 overflow-hidden min-w-0';
+  row.className = 'flex items-center gap-3 flex-1 min-w-0';
 
   const label = document.createElement('label');
   label.className = 'relative flex items-center justify-center cursor-pointer flex-shrink-0';
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
-  cb.className = 'peer appearance-none w-6 h-6 border-2 border-outline-variant rounded-full checked:bg-primary checked:border-primary transition-colors cursor-pointer';
+  cb.className = 'peer appearance-none w-[19px] h-[19px] shrink-0 bg-transparent border-[1.5px] border-faint rounded-full checked:bg-accent checked:border-accent hover:border-muted transition-colors cursor-pointer';
   cb.onchange = () => toggleDone(id);
 
   const checkIcon = document.createElement('span');
-  checkIcon.className = 'absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none text-on-primary';
-  checkIcon.innerHTML = '<span class="material-symbols-outlined text-[16px] font-bold">check</span>';
+  checkIcon.className = 'absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none text-accent-ink';
+  checkIcon.innerHTML = '<span class="material-symbols-outlined text-[13px] leading-none font-bold">check</span>';
 
   label.append(cb, checkIcon);
 
   const textContainer = document.createElement('div');
-  textContainer.className = 'flex flex-col flex-1 min-w-0 pr-2';
+  textContainer.className = 'flex flex-col flex-1 min-w-0 py-1';
 
   const text = document.createElement('input');
-  text.className = 'text w-full bg-transparent border-none p-0 focus:ring-0 text-on-surface font-body-lg transition-all truncate';
+  text.className = 'text w-full bg-transparent border-0 p-0 focus:ring-0 text-ink text-[15px] leading-snug truncate';
   text.setAttribute('enterkeyhint', 'enter');
   text.autocomplete = 'off';
   // Sync per keystroke rather than on blur: the store narrows it to the characters
@@ -471,30 +486,30 @@ function createItemRow(item) {
   });
 
   const meta = document.createElement('span');
-  meta.className = 'metaRow text-[11px] text-on-surface-variant font-medium mt-0.5 hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-300';
+  meta.className = 'metaRow text-[11px] text-faint leading-tight mt-0.5 truncate';
 
   textContainer.append(text, meta);
   row.append(label, textContainer);
 
   const rightContainer = document.createElement('div');
-  rightContainer.className = 'flex items-center justify-between md:justify-end gap-1 mt-3 md:mt-0 pt-3 md:pt-0 border-t border-outline-variant/20 md:border-t-0 flex-shrink-0';
+  rightContainer.className = 'flex items-center shrink-0';
 
   const mobileMeta = document.createElement('span');
-  mobileMeta.className = 'text-[11px] text-on-surface-variant font-medium md:hidden';
+  mobileMeta.className = 'sr-only';
 
   const actionsContainer = document.createElement('div');
-  actionsContainer.className = 'flex items-center gap-1';
+  actionsContainer.className = 'flex items-center gap-0.5';
 
   const del = document.createElement('button');
-  del.className = 'w-10 h-10 flex items-center justify-center rounded-full text-outline-variant hover:text-error hover:bg-error-container/20 transition-colors';
-  del.innerHTML = '<span class="material-symbols-outlined text-[20px]">delete</span>';
+  del.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-danger hover:bg-danger-soft transition-colors';
+  del.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">delete</span>';
   del.onclick = () => store.deleteItem(listId, id);
 
   const handle = document.createElement('div');
-  handle.className = 'drag handle p-2 rounded-lg text-outline-variant hover:bg-surface-container hover:text-primary transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-primary focus:outline-none';
+  handle.className = 'drag handle w-7 h-9 flex items-center justify-center rounded-md text-faint hover:text-muted transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-accent focus:outline-none';
   handle.tabIndex = 0;
   handle.setAttribute('aria-label', 'Reorder item (Press Space to grab)');
-  handle.innerHTML = '<span class="material-symbols-outlined">drag_indicator</span>';
+  handle.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
   actionsContainer.append(del, handle);
   rightContainer.append(mobileMeta, actionsContainer);
@@ -510,12 +525,13 @@ function updateItemRow(li, item) {
 
   if (cb.checked !== done) cb.checked = done;
   text.classList.toggle('line-through', done);
-  text.classList.toggle('text-on-surface-variant/50', done);
+  text.classList.toggle('text-faint', done);
   setInputValue(text, item.text);
 
-  const added = `Added: ${fmt(item.createdAt)}`;
+  const added = `Added ${ago(item.createdAt)}`;
   if (meta.textContent !== added) {
     meta.textContent = added;
+    meta.title = fmt(item.createdAt);
     mobileMeta.textContent = added;
   }
 
@@ -535,7 +551,9 @@ function renderItems() {
 
 if (inputEl) inputEl.setAttribute('enterkeyhint','enter');
 function autoResizeTextarea(el) {
-  if (!el) return;
+  // A hidden element reports scrollHeight 0, and this used to run once at load
+  // while the list view was still hidden — pinning the composer to zero height.
+  if (!el || el.offsetParent === null) return;
   el.style.height = 'auto';
   el.style.height = Math.min(200, el.scrollHeight) + 'px';
 }
@@ -627,6 +645,7 @@ function showHome() {
 function showListView() {
   if (homeSection) homeSection.classList.add('hidden');
   if (listView) listView.classList.remove('hidden');
+  autoResizeTextarea(inputEl);
   // Rows belong to whichever list is open, so start the view from scratch.
   itemRows.clear();
   listEl.replaceChildren();

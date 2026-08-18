@@ -1,81 +1,47 @@
-import containerQueries from '@tailwindcss/container-queries';
 import forms from '@tailwindcss/forms';
 
 /** @type {import('tailwindcss').Config} */
-// Material 3 palette, previously declared inline in index.html against the Tailwind
-// CDN build. It lives here now so `npm run build:css` can emit a static stylesheet.
+// Colours are CSS custom properties defined in web-src/styles.css, exposed to
+// Tailwind as rgb(var(--token) / <alpha-value>) so opacity modifiers still work
+// (bg-surface/70). Dark mode is one block of variable overrides rather than a
+// dark: variant on every element, which is how half the old UI ended up light in
+// dark mode: the header had a dark: rule and the page behind it did not.
 export default {
   darkMode: 'class',
   content: ['./assets/www/index.html', './assets/www/app.js'],
   theme: {
     extend: {
       colors: {
-        'surface-container-low': '#eff4ff',
-        'primary-container': '#6063ee',
-        'tertiary-container': '#727577',
-        'on-tertiary-fixed': '#191c1e',
-        'inverse-on-surface': '#eaf1ff',
-        'on-secondary-fixed-variant': '#3f465c',
-        'inverse-primary': '#c0c1ff',
-        'surface-container': '#e5eeff',
-        'on-surface': '#0b1c30',
-        'on-secondary-fixed': '#131b2e',
-        'primary-fixed': '#e1e0ff',
-        'surface-container-high': '#dce9ff',
-        'tertiary-fixed': '#e0e3e5',
-        'on-primary': '#ffffff',
-        'error-container': '#ffdad6',
-        error: '#ba1a1a',
-        outline: '#767586',
-        'surface-dim': '#cbdbf5',
-        'tertiary-fixed-dim': '#c4c7c9',
-        'on-primary-container': '#fffbff',
-        'on-primary-fixed': '#07006c',
-        'surface-bright': '#f8f9ff',
-        'on-secondary': '#ffffff',
-        'secondary-fixed': '#dae2fd',
-        'on-tertiary': '#ffffff',
-        'secondary-fixed-dim': '#bec6e0',
-        'on-secondary-container': '#5c647a',
-        'surface-container-lowest': '#ffffff',
-        'on-tertiary-container': '#fbfdff',
-        background: '#f8f9ff',
-        'on-tertiary-fixed-variant': '#444749',
-        'surface-variant': '#d3e4fe',
-        'inverse-surface': '#213145',
-        'primary-fixed-dim': '#c0c1ff',
-        'on-error-container': '#93000a',
-        'outline-variant': '#c7c4d7',
-        'surface-container-highest': '#d3e4fe',
-        'on-error': '#ffffff',
-        'surface-tint': '#494bd6',
-        surface: '#f8f9ff',
-        'secondary-container': '#dae2fd',
-        'on-background': '#0b1c30',
-        'on-surface-variant': '#464554',
-        secondary: '#565e74',
-        primary: '#4648d4',
-        tertiary: '#595c5e',
-        'on-primary-fixed-variant': '#2f2ebe',
-      },
-      borderRadius: {
-        DEFAULT: '0.25rem',
-        lg: '0.5rem',
-        xl: '0.75rem',
-        '2xl': '1rem',
-        full: '9999px',
+        bg: 'rgb(var(--bg) / <alpha-value>)',
+        surface: 'rgb(var(--surface) / <alpha-value>)',
+        raised: 'rgb(var(--raised) / <alpha-value>)',
+        line: 'rgb(var(--line) / <alpha-value>)',
+        ink: 'rgb(var(--ink) / <alpha-value>)',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
+        faint: 'rgb(var(--faint) / <alpha-value>)',
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        'accent-ink': 'rgb(var(--accent-ink) / <alpha-value>)',
+        'accent-soft': 'rgb(var(--accent-soft) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
+        'danger-soft': 'rgb(var(--danger-soft) / <alpha-value>)',
       },
       fontFamily: {
-        'display-lg': ['Geist', 'sans-serif'],
-        'headline-md': ['Geist', 'sans-serif'],
-        'label-md': ['Geist', 'sans-serif'],
-        'body-lg': ['Geist', 'sans-serif'],
-        'label-sm': ['Geist', 'sans-serif'],
-        'headline-sm': ['Geist', 'sans-serif'],
-        'body-md': ['Geist', 'sans-serif'],
-        'headline-md-mobile': ['Geist', 'sans-serif'],
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        DEFAULT: '0.5rem',
+        lg: '0.625rem',
+        xl: '0.875rem',
+        '2xl': '1.125rem',
+      },
+      boxShadow: {
+        // One soft elevation, used sparingly. The old design put a shadow on every
+        // card, which reads as clutter once the cards are dense.
+        soft: '0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.06)',
+        lift: '0 8px 24px rgb(0 0 0 / 0.12)',
       },
     },
   },
-  plugins: [forms, containerQueries],
+  // Normalises input rendering across browsers; the markup styles them from there.
+  plugins: [forms],
 };
