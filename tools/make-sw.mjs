@@ -36,6 +36,9 @@ async function main() {
   const files = (await collect(WWW)).sort();
   const hash = createHash('sha256');
   for (const file of files) hash.update(await readFile(file));
+  // This generator's own source feeds the hash as well, so changing the caching
+  // strategy rotates the cache name and discards entries the old rules stored.
+  hash.update(await readFile(new URL(import.meta.url)));
   const version = hash.digest('hex').slice(0, 12);
 
   const assets = files.map((f) => `./${relative(WWW, f)}`);
@@ -64,8 +67,16 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Cache-first: the bundle is versioned, so a hit is never stale — a new deploy
-// arrives as a new cache name rather than as a fresher copy of an old file.
+// Network-first for anything that carries the app's behaviour, cache-first only
+// for assets whose bytes never change under the same name.
+//
+// This was cache-first for everything, on the reasoning that a new deploy arrives
+// as a new cache name. That is wrong in the order it happens: the new worker only
+// installs *after* the page has already been served from the old cache, so a
+// returning visitor saw the previous build and a reload just served it again.
+// Filenames are not content-hashed, so the stale entry kept winning.
+const CODE = new Set(['document', 'script', 'style', 'manifest', '']);
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -73,13 +84,35 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // signalling and peers
 
+  const isCode = request.mode === 'navigate' || CODE.has(request.destination);
+
+  if (isCode) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Keep the cache current so the offline copy is the latest seen.
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((hit) =>
+            hit || (request.mode === 'navigate' ? caches.match('./') : Promise.reject(new Error('offline')))
+          )
+        )
+    );
+    return;
+  }
+
+  // Fonts and icons: same bytes every time, so serve them instantly and only
+  // reach the network when they are missing.
   event.respondWith(
     caches.match(request).then((hit) => {
       if (hit) return hit;
-      return fetch(request).catch(() => {
-        // An offline navigation to any route still gets the app shell.
-        if (request.mode === 'navigate') return caches.match('./');
-        throw new Error('offline and not cached: ' + url.pathname);
+      return fetch(request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+        return response;
       });
     })
   );
