@@ -645,7 +645,14 @@ function createItemRow(item) {
   const meta = document.createElement('span');
   meta.className = 'metaRow text-[11px] text-faint leading-tight mt-0.5 truncate';
 
-  textContainer.append(text, meta);
+  // Which listing a price came from. Hidden until there is one, because "milk" is
+  // not a product and the match is the only way to judge whether the price is right.
+  const matched = document.createElement('a');
+  matched.className = 'hidden text-[11px] text-accent leading-tight mt-0.5 truncate hover:underline';
+  matched.target = '_blank';
+  matched.rel = 'noopener noreferrer';
+
+  textContainer.append(text, meta, matched);
   row.append(label, textContainer);
 
   const rightContainer = document.createElement('div');
@@ -678,12 +685,12 @@ function createItemRow(item) {
   rightContainer.append(mobileMeta, dot, price, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot, price };
+  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, handle, label, dot, price } = li.refs;
+  const { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -730,6 +737,21 @@ function updateItemRow(li, item) {
   dot.title = author ? `Added by ${author.name}` : '';
 
   const quote = prices.get(item.id);
+  const priced = quote && !quote.error && !quote.unavailable && !deleted;
+
+  // The product name, linked to the listing it was priced from.
+  matched.classList.toggle('hidden', !priced || !quote.title);
+  if (priced && quote.title) {
+    matched.textContent = quote.title;
+    if (quote.link) {
+      matched.href = quote.link;
+      matched.title = `Open at ${quote.source ?? 'the shop'}`;
+    } else {
+      matched.removeAttribute('href');
+      matched.title = quote.source ?? '';
+    }
+  }
+
   if (!quote || deleted) {
     price.classList.add('hidden');
     price.textContent = '';

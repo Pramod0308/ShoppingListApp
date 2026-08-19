@@ -249,7 +249,8 @@ background, and nothing else about a list is sent. Results are cached per item a
 store for 7 days in `localStorage`, so re-estimating the same list costs nothing and
 works offline.
 
-Estimates are estimates: "milk" is not a product, so the matched listing's title is
-shown on each price. Aldi is thinly represented in shopping results because its UK
+Estimates are estimates: "milk" is not a product, so each priced row shows the
+listing it was matched to, linked to that product page. In the app the link opens in
+the system browser rather than navigating the list away. Aldi is thinly represented in shopping results because its UK
 site is largely a marketing site, so it will flag unavailable more often than the
 others.

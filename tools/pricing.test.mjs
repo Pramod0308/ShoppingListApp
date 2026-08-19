@@ -36,7 +36,7 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
 {
   stubSerper([
     { title: 'Tesco Oat Drink 1L', source: 'Tesco', price: '£1.40' },
-    { title: 'ASDA Oat Drink 1L', source: 'Asda Groceries', price: '£1.15' },
+    { title: 'ASDA Oat Drink 1L', source: 'Asda Groceries', price: '£1.15', link: 'https://groceries.asda.com/product/123' },
     { title: 'Waitrose Oat Drink', source: 'Waitrose', price: '£1.85' },
   ]);
   const res = await call({ store: 'asda', items: ['oat milk'] });
@@ -47,6 +47,8 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
   check('reports which listing it costed', first.title === 'ASDA Oat Drink 1L');
   check('does not use another retailer as a fallback', first.price !== 1.4 && first.price !== 1.85);
   check('sets CORS for the app origin', res.headers.get('Access-Control-Allow-Origin') === ORIGIN);
+  check('returns the listing URL so the product can be opened',
+    first.link === 'https://groceries.asda.com/product/123', String(first.link));
 }
 
 // 2. No listing from that store is the "not available here" answer, not an error.

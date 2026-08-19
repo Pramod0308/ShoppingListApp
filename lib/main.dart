@@ -58,9 +58,17 @@ class WebViewScreen extends StatefulWidget {
 
 class _WebViewScreenState extends State<WebViewScreen> {
   InAppWebViewController? webViewController;
+
+  /// Opens shop listings in the system browser — Custom Tabs on Android, Safari's
+  /// view controller on iOS — rather than navigating the app's own WebView away
+  /// from the list and stranding the user there.
+  final ChromeSafariBrowser _externalBrowser = ChromeSafariBrowser();
   InAppWebViewSettings settings = InAppWebViewSettings(
     // Remote debugging is a debug-build affordance, not something to ship.
     isInspectable: kDebugMode,
+    // Product links open with target="_blank", which only reaches onCreateWindow
+    // on Android when this is on.
+    supportMultipleWindows: true,
     mediaPlaybackRequiresUserGesture: false,
     allowsInlineMediaPlayback: true,
     iframeAllowFullscreen: true,
@@ -105,6 +113,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
             initialSettings: settings,
             onWebViewCreated: (controller) {
               webViewController = controller;
+            },
+            onCreateWindow: (controller, action) async {
+              final url = action.request.url;
+              // Only ever hand out http(s); never let a link pull the shell itself
+              // somewhere else.
+              if (url != null && (url.scheme == 'https' || url.scheme == 'http')) {
+                await _externalBrowser.open(url: url);
+              }
+              return false; // handled here; no second WebView
             },
             // Nothing in the bundle uses the camera, the microphone or location.
             // If a request ever appears, something is wrong — refuse it rather

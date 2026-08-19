@@ -115,6 +115,8 @@ async function priceFor(query, store, apiKey) {
     currency: 'GBP',
     title: hit.title ?? query,
     source: hit.source ?? store,
+    // Which listing this price came from, so it can be opened and checked.
+    link: typeof hit.link === 'string' ? hit.link : null,
   };
 }
 
@@ -154,7 +156,7 @@ export default {
       const summarise = (d) =>
         (Array.isArray(d.shopping) ? d.shopping : [])
           .slice(0, 10)
-          .map((r) => ({ source: r.source, price: r.price, title: (r.title || '').slice(0, 60) }));
+          .map((r) => ({ source: r.source, price: r.price, title: (r.title || '').slice(0, 60), link: r.link }));
       return json({
         query: q,
         store,
