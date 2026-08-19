@@ -224,6 +224,13 @@ publishes no prices in its structured data. Having the shops' apps installed doe
 help either — the platforms sandbox apps from one another, so nothing can read
 another app's data or screen.
 
+Coverage, measured against the live API rather than assumed: **ASDA, Sainsbury's and
+Morrisons return prices; Aldi does not** and reports every item as not stocked, which
+matches its barely selling groceries online in the UK. Naming the shop in the query
+finds it for ASDA and Morrisons; Sainsbury's returns nothing when named and is found
+by a second, plain search filtered on the seller, so a miss costs one extra query and
+a hit costs one.
+
 An API key cannot ship in a static bundle, so `worker/` is a Cloudflare Worker that
 holds the key and answers one narrow question — what does this product cost at this
 shop. To deploy it:

@@ -312,6 +312,13 @@ async function estimateCost() {
     return;
   }
 
+  // "About £0.00 for 0 items" is technically true and reads like a fault. When a
+  // shop lists none of it, say that instead of totalling nothing.
+  if (priced === 0 && missing > 0) {
+    setSummary(`None of these are listed at ${label}.`);
+    return;
+  }
+
   const parts = [`About ${formatMoney(total)} at ${label} for ${plural(priced, 'item')}`];
   if (missing) parts.push(`${missing} not stocked there`);
   if (failed) parts.push(`${failed} could not be checked`);

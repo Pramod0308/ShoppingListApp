@@ -33,4 +33,4 @@ export const PUBLIC_BASE_URL = 'https://pramod0308.github.io/ShoppingListApp/';
 // Empty means the cost estimate is switched off and the button says so, rather than
 // the app failing at a URL that was never set. Anything other than a *.workers.dev
 // host also needs adding to connect-src in index.html, or the browser refuses it.
-export const PRICE_API_URL = '';
+export const PRICE_API_URL = 'https://shopnest-prices.shopitnest.workers.dev/';
