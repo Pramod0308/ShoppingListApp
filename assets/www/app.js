@@ -272,8 +272,8 @@ function setSummary(text, tone = 'muted') {
 
 async function estimateCost() {
   if (!isConfigured()) {
-    // A plain browser tab has no shell to do the lookup and no worker configured.
-    setSummary('Price estimates only work in the ShopNest app.', 'danger');
+    // Neither source is available: no worker URL, and no shell to fall back on.
+    setSummary('Price lookup is not set up — see PRICE_API_URL in sync-config.js.', 'danger');
     return;
   }
 

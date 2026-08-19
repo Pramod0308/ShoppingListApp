@@ -31,11 +31,11 @@ const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const shell = () => globalThis.flutter_inappwebview ?? null;
 
 export const hasShellLookup = () => Boolean(shell()?.callHandler);
-export const isConfigured = () => hasShellLookup() || Boolean(PRICE_API_URL);
+export const isConfigured = () => Boolean(PRICE_API_URL) || hasShellLookup();
 
 /// Where a lookup would go, for messages the user reads.
 export const sourceName = () =>
-  hasShellLookup() ? 'this device' : PRICE_API_URL ? 'the price service' : null;
+  PRICE_API_URL ? 'the price service' : hasShellLookup() ? 'this device' : null;
 
 // Cache keys ignore case and spacing so "Oat Milk" and "oat milk" are one lookup.
 const normalise = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -110,22 +110,29 @@ export async function priceItems(items, store) {
 }
 
 async function lookup(items, store) {
+  // The service comes first even inside the app. Reading a shop's own page was the
+  // original plan and it does not work: ASDA answers with a bot challenge,
+  // Sainsbury's and Aldi with Access Denied, and Morrisons ignores the search term
+  // and publishes no prices. Preferring it would mean choosing the route that
+  // returns nothing over the one that returns prices.
+  if (PRICE_API_URL) {
+    const res = await fetch(PRICE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ store, items }),
+    });
+    if (!res.ok) throw new Error(`lookup failed (${res.status})`);
+    return res.json();
+  }
+
   const bridge = shell();
   if (bridge?.callHandler) {
-    // Reading a shop's own page takes seconds per item, so the shell reports
-    // progress through this hook while it works.
+    // Kept as a fallback, and it reports progress while it works, but expect it to
+    // come back blocked until the shops stop turning it away.
     return bridge.callHandler('priceLookup', { store, items });
   }
-  if (!PRICE_API_URL) {
-    throw new Error('Price lookup only works in the app');
-  }
-  const res = await fetch(PRICE_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ store, items }),
-  });
-  if (!res.ok) throw new Error(`lookup failed (${res.status})`);
-  return res.json();
+
+  throw new Error('No price source is configured');
 }
 
 /// Called by the shell as it works through a list.

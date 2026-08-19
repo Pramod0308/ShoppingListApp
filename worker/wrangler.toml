@@ -4,3 +4,7 @@ compatibility_date = "2026-08-01"
 
 # The Serper API key is a secret, never a variable in this file:
 #   npx wrangler secret put SERPER_API_KEY
+
+# Same as the signalling worker: logs for something otherwise invisible.
+[observability]
+enabled = true
