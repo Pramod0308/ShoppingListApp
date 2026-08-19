@@ -43,6 +43,10 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+                // A keystore made with openssl rather than keytool is PKCS12. Java 9+
+                // defaults to that anyway, but saying so means a JKS file works too
+                // when key.properties asks for it, instead of failing on probing.
+                keystoreProperties.getProperty("storeType")?.let { storeType = it }
             }
         }
     }

@@ -86,6 +86,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Optional: set to JKS only if the keystore came from an old keytool.
+          KEYSTORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "::error::ANDROID_KEYSTORE_BASE64 is not set — refusing to publish an unsigned release."
@@ -97,6 +99,7 @@ jobs:
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
+          storeType=${KEYSTORE_TYPE:-PKCS12}
           EOF
 
       # --android-skip-build-dependency-validation silences Flutter's AGP/Gradle
