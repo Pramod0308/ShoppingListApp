@@ -66,23 +66,24 @@ const String _extractJs = r'''
     return null;
   }
 
-  function fromText() {
-    // First plausible shelf price on the page, with its nearest heading as a label.
-    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    var node;
-    while ((node = walker.nextNode())) {
-      var match = node.nodeValue && node.nodeValue.match(/£\s?(\d+(?:\.\d{2})?)/);
-      if (!match) continue;
-      var value = parseFloat(match[1]);
-      if (!(value > 0)) continue;
-      var box = node.parentElement ? node.parentElement.closest('li, article, div') : null;
-      var label = box ? (box.querySelector('h2, h3, a[href*="product"]') || {}).textContent : '';
-      return { price: value, title: (label || '').trim() };
+  // Deliberately no "first £ on the page" fallback. That is what reported £1 for
+  // every item: the first price-looking text on a shop page is a delivery
+  // threshold or a promo banner, never the product. A wrong number presented
+  // confidently is worse than admitting the price could not be read.
+
+  function blocked() {
+    var title = (document.title || '').toLowerCase();
+    var body = (document.body ? document.body.innerText || '' : '').slice(0, 400).toLowerCase();
+    var signs = ['just a moment', 'access denied', 'are you a robot', 'unusual traffic',
+                 'verify you are human', 'checking your browser'];
+    for (var i = 0; i < signs.length; i++) {
+      if (title.indexOf(signs[i]) >= 0 || body.indexOf(signs[i]) >= 0) return true;
     }
-    return null;
+    return false;
   }
 
-  return JSON.stringify(fromJsonLd() || fromText() || null);
+  if (blocked()) return JSON.stringify({ blocked: true });
+  return JSON.stringify(fromJsonLd() || null);
 })();
 ''';
 
@@ -173,6 +174,7 @@ class PriceLookup {
       ),
       onLoadStop: (controller, url) async {
         // Search results render after load, so poll rather than reading once.
+        var refused = false;
         for (var attempt = 0; attempt < 10; attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 600));
           final raw = await controller.evaluateJavascript(source: _extractJs);
@@ -181,8 +183,12 @@ class PriceLookup {
             await finish(PriceResult.found(query, parsed.$1, parsed.$2).toJson());
             return;
           }
+          if (raw is String && raw.contains('"blocked"')) refused = true;
         }
-        await finish(PriceResult.unavailable(query).toJson());
+        // "The shop turned us away" is not "the shop does not sell it".
+        await finish(refused
+            ? PriceResult.failed(query, 'the store blocked the lookup').toJson()
+            : PriceResult.unavailable(query).toJson());
       },
       onReceivedError: (controller, request, error) async {
         await finish(PriceResult.failed(query, 'could not open the store page').toJson());
@@ -207,6 +213,7 @@ class PriceLookup {
       }
     }
     if (value is! Map) return null;
+    if (value['blocked'] == true) return null; // handled by the caller
     final price = value['price'];
     if (price is! num) return null;
     return (price.toDouble(), (value['title'] ?? '').toString());

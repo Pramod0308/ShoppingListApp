@@ -186,8 +186,13 @@ previous build after an app update.
   removes it for good. The Archive and Settings tabs that used to sit in the bottom
   navigation were removed because nothing was behind them; the mockups for them are
   in `design/mockups/`.
-- The cost estimate only works in the installed app. The published website has no
-  shell to read a shop's page with, so the button there says so.
+- **The cost estimate does not currently return prices.** Reading a shop's own page
+  was measured against all four: ASDA serves a Cloudflare bot challenge, Sainsbury's
+  and Aldi return Access Denied, and Morrisons loads but ignores the search term and
+  publishes no prices in its structured data. The lookup now reports "blocked" or
+  "no price found" rather than guessing — an earlier fallback that took the first
+  £ on the page reported £1 for everything. Setting `PRICE_API_URL` to the Worker in
+  `worker/` is the route that does work.
 - Release signing is wired to repository secrets, so a tag build fails rather than
   publishing a debug-signed APK if they are ever missing.
 
