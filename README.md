@@ -250,7 +250,9 @@ store for 7 days in `localStorage`, so re-estimating the same list costs nothing
 works offline.
 
 Estimates are estimates: "milk" is not a product, so each priced row shows the
-listing it was matched to, linked to that product page. In the app the link opens in
-the system browser rather than navigating the list away. Aldi is thinly represented in shopping results because its UK
+listing it was matched to, linked to that shop's search for it. The lookup's own link
+points at Google Shopping rather than the shop, so the link is built from the matched
+product name instead — on a phone that opens the shop's own app. In the app it opens
+in the system browser rather than navigating the list away. Aldi is thinly represented in shopping results because its UK
 site is largely a marketing site, so it will flag unavailable more often than the
 others.

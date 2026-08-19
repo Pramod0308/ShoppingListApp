@@ -110,6 +110,28 @@ async function lookup(items, store) {
   return res.json();
 }
 
+// Where to send someone who taps a matched product.
+//
+// Serper's own `link` goes to Google Shopping, not the shop — following it lands on
+// a Google results page rather than the item. These search the shop's own site for
+// the exact product the price came from, which on a phone opens that shop's app,
+// because the apps claim these links.
+const STORE_SEARCH = {
+  asda: (q) => `https://groceries.asda.com/search/${encodeURIComponent(q)}`,
+  sainsburys: (q) => `https://www.sainsburys.co.uk/gol-ui/SearchResults/${encodeURIComponent(q)}`,
+  morrisons: (q) => `https://groceries.morrisons.com/search?entry=${encodeURIComponent(q)}`,
+  aldi: (q) => `https://groceries.aldi.co.uk/en-GB/Search?keywords=${encodeURIComponent(q)}`,
+};
+
+/// The best link for a priced result: the shop's own search for the matched product,
+/// falling back to whatever the lookup gave us.
+export function productUrl(store, result) {
+  if (!result || result.error || result.unavailable) return null;
+  const build = STORE_SEARCH[store];
+  if (build && result.title) return build(result.title);
+  return result.link ?? null;
+}
+
 export function formatMoney(amount) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'GBP' }).format(amount);
 }

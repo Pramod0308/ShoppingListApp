@@ -2,7 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
-import { STORES, isConfigured, priceItems, formatMoney, sourceName } from "./pricing.js";
+import { STORES, isConfigured, priceItems, formatMoney, sourceName, productUrl } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -743,9 +743,11 @@ function updateItemRow(li, item) {
   matched.classList.toggle('hidden', !priced || !quote.title);
   if (priced && quote.title) {
     matched.textContent = quote.title;
-    if (quote.link) {
-      matched.href = quote.link;
-      matched.title = `Open at ${quote.source ?? 'the shop'}`;
+    const href = productUrl(storeSelectEl?.value, quote);
+    const shop = STORES.find((x) => x.id === storeSelectEl?.value)?.label ?? 'the shop';
+    if (href) {
+      matched.href = href;
+      matched.title = `Find this at ${shop}`;
     } else {
       matched.removeAttribute('href');
       matched.title = quote.source ?? '';
