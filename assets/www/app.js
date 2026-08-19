@@ -2,7 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
-import { STORES, isConfigured, priceItems, formatMoney, sourceName, onProgress } from "./pricing.js";
+import { STORES, isConfigured, priceItems, formatMoney, sourceName } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -288,13 +288,10 @@ async function estimateCost() {
 
   estimateBtn.disabled = true;
   setSummary(`Checking ${label}…`);
-  // Reading a shop's pages takes seconds per item, so say how far along it is.
-  onProgress((done, total) => setSummary(`Checking ${label} — ${done} of ${total}…`));
   try {
     prices = await priceItems(target, storeId);
   } finally {
     estimateBtn.disabled = false;
-    onProgress(null);
   }
   renderItems();
 

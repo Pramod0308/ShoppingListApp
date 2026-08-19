@@ -1,16 +1,12 @@
 // Estimating what a list costs at one shop.
 //
 // A page cannot fetch a supermarket's site — no CORS — and a static bundle cannot
-// hold an API key, so the price has to come from somewhere with neither limit.
-// Two sources, in order:
+// hold an API key, so prices come from the Worker in worker/, which holds the key and
+// answers one narrow question: what does this product cost at this shop.
 //
-//   1. The mobile shell. It loads the shop's own page in a headless WebView and
-//      reads the price out, using this device's connection. No key, no server, no
-//      cost. Only exists inside the installed app.
-//   2. The Worker in worker/, if PRICE_API_URL was configured. This is what makes
-//      the published website able to price anything at all.
-//
-// With neither, the button says so rather than failing at nothing.
+// Reading the shops' own pages from the mobile shell was tried and removed. It does
+// not work: ASDA answers with a bot challenge, Sainsbury's and Aldi with Access
+// Denied, and Morrisons ignores the search term and publishes no prices.
 //
 // Item text leaves the device only when the estimate button is pressed. Nothing here
 // runs in the background, and no other part of a list is ever sent.
@@ -27,15 +23,10 @@ export const STORES = [
 const CACHE_KEY = 'shopnest-prices';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-// The shell injects this bridge; a plain browser tab has no such object.
-const shell = () => globalThis.flutter_inappwebview ?? null;
-
-export const hasShellLookup = () => Boolean(shell()?.callHandler);
-export const isConfigured = () => Boolean(PRICE_API_URL) || hasShellLookup();
+export const isConfigured = () => Boolean(PRICE_API_URL);
 
 /// Where a lookup would go, for messages the user reads.
-export const sourceName = () =>
-  PRICE_API_URL ? 'the price service' : hasShellLookup() ? 'this device' : null;
+export const sourceName = () => (PRICE_API_URL ? 'the price service' : null);
 
 // Cache keys ignore case and spacing so "Oat Milk" and "oat milk" are one lookup.
 const normalise = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -110,34 +101,13 @@ export async function priceItems(items, store) {
 }
 
 async function lookup(items, store) {
-  // The service comes first even inside the app. Reading a shop's own page was the
-  // original plan and it does not work: ASDA answers with a bot challenge,
-  // Sainsbury's and Aldi with Access Denied, and Morrisons ignores the search term
-  // and publishes no prices. Preferring it would mean choosing the route that
-  // returns nothing over the one that returns prices.
-  if (PRICE_API_URL) {
-    const res = await fetch(PRICE_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ store, items }),
-    });
-    if (!res.ok) throw new Error(`lookup failed (${res.status})`);
-    return res.json();
-  }
-
-  const bridge = shell();
-  if (bridge?.callHandler) {
-    // Kept as a fallback, and it reports progress while it works, but expect it to
-    // come back blocked until the shops stop turning it away.
-    return bridge.callHandler('priceLookup', { store, items });
-  }
-
-  throw new Error('No price source is configured');
-}
-
-/// Called by the shell as it works through a list.
-export function onProgress(fn) {
-  globalThis.__shopnestPriceProgress = fn;
+  const res = await fetch(PRICE_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ store, items }),
+  });
+  if (!res.ok) throw new Error(`lookup failed (${res.status})`);
+  return res.json();
 }
 
 export function formatMoney(amount) {

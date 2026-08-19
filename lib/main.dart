@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
-import 'price_lookup.dart';
-
 /// The bundle is served over loopback HTTP rather than opened as a file:// URL.
 /// A real origin is what lets the two file-URL access settings stay off, and it is
 /// also what makes ES modules, the history API and persistent storage behave the
@@ -107,39 +105,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
             initialSettings: settings,
             onWebViewCreated: (controller) {
               webViewController = controller;
-
-              // The page cannot fetch a shop's site itself — no CORS, and no key it
-              // could hold — so it asks the shell, which has neither limit. Results
-              // come back in the shape assets/www/pricing.js already expects.
-              controller.addJavaScriptHandler(
-                handlerName: 'priceLookup',
-                callback: (args) async {
-                  final request = args.isNotEmpty && args.first is Map
-                      ? Map<String, dynamic>.from(args.first as Map)
-                      : const <String, dynamic>{};
-                  final store = (request['store'] ?? '').toString();
-                  final items = (request['items'] as List?)
-                          ?.map((i) => i.toString())
-                          .where((i) => i.trim().isNotEmpty)
-                          .toList() ??
-                      const <String>[];
-
-                  if (items.isEmpty) return {'results': <dynamic>[]};
-
-                  final results = await PriceLookup.run(
-                    store,
-                    items,
-                    onProgress: (done, total) {
-                      // Lets the page show "3 of 12" while a slow run is going.
-                      controller.evaluateJavascript(
-                        source: 'window.__shopnestPriceProgress '
-                            '&& window.__shopnestPriceProgress($done, $total)',
-                      );
-                    },
-                  );
-                  return {'store': store, 'results': results};
-                },
-              );
             },
             // Nothing in the bundle uses the camera, the microphone or location.
             // If a request ever appears, something is wrong — refuse it rather
