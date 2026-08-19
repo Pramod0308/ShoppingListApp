@@ -147,7 +147,7 @@ export class Store {
         order: entry.get('order') ?? '',
         name: handle ? handle.doc.getText('name').toString() : '',
         updatedAt: entry.get('updated_at') ?? '',
-        itemCount: handle ? handle.items.size : 0,
+        itemCount: handle ? this.activeItems(id).length : 0,
         loaded: !!handle,
       });
     });
@@ -168,21 +168,38 @@ export class Store {
     return this.#index.has(id);
   }
 
+  /// Every item, including deleted ones — callers partition on `deleted`. Items
+  /// written before soft delete existed have no `deleted_at` and read as active.
   items(id) {
     const handle = this.#lists.get(id);
     if (!handle) return [];
     const out = [];
     handle.items.forEach((item, itemId) => {
       if (!(item instanceof Y.Map)) return;
+      const deletedAt = item.get('deleted_at') ?? null;
       out.push({
         id: itemId,
         text: item.get('text')?.toString() ?? '',
         done: item.get('done') === true,
+        deleted: deletedAt !== null,
+        deletedAt,
         createdAt: item.get('created_at') ?? '',
         order: item.get('order') ?? '',
       });
     });
     return out.sort((a, b) => (a.done !== b.done ? (a.done ? 1 : -1) : compare(a, b)));
+  }
+
+  /// Deleted items, most recently removed first — the order that section reads in.
+  deletedItems(id) {
+    return this.items(id)
+      .filter((i) => i.deleted)
+      .sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : a.deletedAt > b.deletedAt ? -1 : 0));
+  }
+
+  /// Items still on the list, deleted ones excluded.
+  activeItems(id) {
+    return this.items(id).filter((i) => !i.deleted);
   }
 
   /* ---------- Lists ---------- */
@@ -246,7 +263,7 @@ export class Store {
     if (!handle || !lines.length) return;
 
     // New rows land above everything still outstanding, in the order they were typed.
-    const firstOpen = this.items(listId).find((i) => !i.done);
+    const firstOpen = this.activeItems(listId).find((i) => !i.done);
     const keys = keysBetween(null, firstOpen ? firstOpen.order : null, lines.length);
     const now = nowIso();
 
@@ -265,7 +282,7 @@ export class Store {
     const handle = this.#lists.get(listId);
     if (!handle) return null;
 
-    const items = this.items(listId);
+    const items = this.activeItems(listId);
     const at = items.findIndex((i) => i.id === afterId);
     if (at === -1) return null;
 
@@ -302,16 +319,31 @@ export class Store {
     this.#touchIndex(listId);
   }
 
+  /// Marks an item deleted rather than removing it, so it can be shown in the
+  /// deleted section. purgeDeleted is the only thing that actually removes items.
   deleteItem(listId, itemId) {
-    this.#lists.get(listId)?.items.delete(itemId);
+    const item = this.#item(listId, itemId);
+    if (!item) return;
+    item.set('deleted_at', nowIso());
+    this.#touchIndex(listId);
+  }
+
+  purgeDeleted(listId) {
+    const handle = this.#lists.get(listId);
+    if (!handle) return;
+    const ids = this.deletedItems(listId).map((i) => i.id);
+    handle.doc.transact(() => ids.forEach((id) => handle.items.delete(id)));
     this.#touchIndex(listId);
   }
 
   clearItems(listId, { doneOnly = false } = {}) {
     const handle = this.#lists.get(listId);
     if (!handle) return;
-    const ids = this.items(listId).filter((i) => !doneOnly || i.done).map((i) => i.id);
-    handle.doc.transact(() => ids.forEach((id) => handle.items.delete(id)));
+    const ids = this.activeItems(listId).filter((i) => !doneOnly || i.done).map((i) => i.id);
+    const now = nowIso();
+    handle.doc.transact(() => {
+      for (const id of ids) this.#item(listId, id)?.set('deleted_at', now);
+    });
     this.#touchIndex(listId);
   }
 

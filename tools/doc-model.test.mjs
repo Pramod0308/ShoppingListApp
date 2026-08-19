@@ -171,5 +171,36 @@ function seedOneItem(text = 'milk') {
   check('no-op edit writes nothing', edit(doc, text, 'the quick brown foxes') === false);
 }
 
+// 7. Soft delete is a field, not a removal: the item stays in the document so it can
+//    be listed, and it converges the same way any other field does.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  edit(b, item(b).get('text'), 'oat milk');
+  sync(a, b);
+
+  check('deleted item survives in the document', item(a) !== undefined);
+  check('deletion and a concurrent edit both apply',
+    item(a).get('deleted_at') === '2026-08-19T00:00:00.000Z' &&
+    item(a).get('text').toString() === 'oat milk');
+  check('deletion converges', item(b).get('deleted_at') === item(a).get('deleted_at'));
+
+  const active = (doc) =>
+    [...doc.getMap('items').values()].filter((m) => (m.get('deleted_at') ?? null) === null);
+  check('deleted item is excluded from the active count', active(a).length === 0);
+}
+
+// 8. Two devices deleting the same item is not a conflict — both wrote the same
+//    intent, and one timestamp wins without the item reappearing.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  item(b).set('deleted_at', '2026-08-19T00:00:05.000Z');
+  sync(a, b);
+
+  check('concurrent deletes agree', item(a).get('deleted_at') === item(b).get('deleted_at'));
+  check('concurrent deletes stay deleted', item(a).get('deleted_at') !== null);
+}
+
 console.log(failures === 0 ? 'doc-model: all checks passed' : `doc-model: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

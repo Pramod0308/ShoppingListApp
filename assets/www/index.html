@@ -119,8 +119,29 @@
             </section>
 
             <ul id="list" class="flex flex-col gap-1.5">
-                <!-- List items will be injected here via app.js -->
+                <!-- Active items injected here via app.js -->
             </ul>
+
+            <!-- Checked items. Heading and list appear only when non-empty. -->
+            <section id="doneSection" class="hidden mt-6">
+                <h2 class="text-[12px] font-medium uppercase tracking-wider text-faint mb-2 px-1">
+                    Done · <span id="doneCount">0</span>
+                </h2>
+                <ul id="doneList" class="flex flex-col gap-1.5"></ul>
+            </section>
+
+            <!-- Removed items, kept as a record. Nothing here can be restored. -->
+            <section id="deletedSection" class="hidden mt-6">
+                <div class="flex items-center justify-between mb-2 px-1">
+                    <h2 class="text-[12px] font-medium uppercase tracking-wider text-faint">
+                        Deleted · <span id="deletedCount">0</span>
+                    </h2>
+                    <button id="purgeDeleted" class="px-2 py-1 rounded-md text-[12px] font-medium text-muted hover:text-danger hover:bg-danger-soft transition-colors" title="Remove these permanently">
+                        Clear
+                    </button>
+                </div>
+                <ul id="deletedList" class="flex flex-col gap-1.5"></ul>
+            </section>
         </main>
     </div>
 

@@ -63,6 +63,13 @@ const remainingEl       = document.getElementById('remaining');
 const clearAllBtn       = document.getElementById('clearAll');
 const clearCompletedBtn = document.getElementById('clearCompleted');
 const listEl            = document.getElementById('list');
+const doneSectionEl     = document.getElementById('doneSection');
+const doneListEl        = document.getElementById('doneList');
+const doneCountEl       = document.getElementById('doneCount');
+const deletedSectionEl  = document.getElementById('deletedSection');
+const deletedListEl     = document.getElementById('deletedList');
+const deletedCountEl    = document.getElementById('deletedCount');
+const purgeDeletedBtn   = document.getElementById('purgeDeleted');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -435,6 +442,11 @@ function renderLists() {
    LIST VIEW (items)
    ============================================================ */
 const itemRows = new Map();
+const doneRows = new Map();
+const deletedRows = new Map();
+// Only the most recent are drawn; nothing restores them, so an unbounded history
+// would just grow the page.
+const DELETED_SHOWN = 50;
 
 function loadListName() {
   if (listNameEl) setInputValue(listNameEl, store.listName(listId));
@@ -452,7 +464,7 @@ function createItemRow(item) {
   li.dataset.id = id;
 
   const row = document.createElement('div');
-  row.className = 'flex items-center gap-3 flex-1 min-w-0';
+  row.className = 'flex items-center gap-3 flex-1 min-w-0 pl-1';
 
   const label = document.createElement('label');
   label.className = 'relative flex items-center justify-center cursor-pointer flex-shrink-0';
@@ -472,7 +484,7 @@ function createItemRow(item) {
   textContainer.className = 'flex flex-col flex-1 min-w-0 py-1';
 
   const text = document.createElement('input');
-  text.className = 'text w-full bg-transparent border-0 p-0 focus:ring-0 text-ink text-[15px] leading-snug truncate';
+  text.className = 'text w-full bg-transparent border-0 p-0 focus:ring-0 text-[15px] leading-snug truncate';
   text.setAttribute('enterkeyhint', 'enter');
   text.autocomplete = 'off';
   // Sync per keystroke rather than on blur: the store narrows it to the characters
@@ -515,38 +527,75 @@ function createItemRow(item) {
   rightContainer.append(mobileMeta, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta };
+  li.refs = { cb, text, meta, mobileMeta, del, handle, label };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta } = li.refs;
+  const { cb, text, meta, mobileMeta, del, handle, label } = li.refs;
   const done = item.done;
+  const deleted = item.deleted;
 
   if (cb.checked !== done) cb.checked = done;
-  text.classList.toggle('line-through', done);
-  text.classList.toggle('text-faint', done);
+  const muted = done || deleted;
+  text.classList.toggle('line-through', muted);
+  text.classList.toggle('text-faint', muted);
+  text.classList.toggle('text-ink', !muted);
   setInputValue(text, item.text);
 
-  const added = `Added ${ago(item.createdAt)}`;
-  if (meta.textContent !== added) {
-    meta.textContent = added;
-    meta.title = fmt(item.createdAt);
-    mobileMeta.textContent = added;
+  // A deleted row is a record, not a control. It loses the card chrome as well as
+  // the controls, so it reads as history rather than as something still on the list.
+  li.classList.toggle('row-press', !deleted);
+  li.classList.toggle('bg-surface', !deleted);
+  li.classList.toggle('border-line', !deleted);
+  li.classList.toggle('hover:bg-raised', !deleted);
+  li.classList.toggle('bg-transparent', deleted);
+  li.classList.toggle('border-transparent', deleted);
+  text.readOnly = deleted;
+  cb.disabled = deleted;
+  label.classList.toggle('hidden', deleted);
+  del.classList.toggle('hidden', deleted);
+  // Reorder is only wired to the active section, so a handle anywhere else would be
+  // a control that quietly does nothing.
+  handle.classList.toggle('hidden', deleted || done);
+
+  const stamp = deleted
+    ? `Deleted ${ago(item.deletedAt)}`
+    : `Added ${ago(item.createdAt)}`;
+  if (meta.textContent !== stamp) {
+    meta.textContent = stamp;
+    meta.title = fmt(deleted ? item.deletedAt : item.createdAt);
+    mobileMeta.textContent = stamp;
   }
 
   li.dataset.order = item.order;
-  // Reordering reads neighbours off the DOM, and done rows are grouped separately,
-  // so a row needs to advertise which group it is in.
-  li.dataset.done = done ? '1' : '0';
 }
 
 function renderItems() {
   if (!remainingEl || !listEl) return;
-  const items = store.items(listId);
-  remainingEl.textContent = `${items.filter(i => !i.done).length} remaining`;
-  reconcile(listEl, items, itemRows, createItemRow, updateItemRow);
+
+  const active = store.activeItems(listId);
+  const outstanding = active.filter(i => !i.done);
+  const done = active.filter(i => i.done);
+  const deleted = store.deletedItems(listId).slice(0, DELETED_SHOWN);
+
+  remainingEl.textContent = `${outstanding.length} remaining`;
+
+  reconcile(listEl, outstanding, itemRows, createItemRow, updateItemRow);
+  reconcile(doneListEl, done, doneRows, createItemRow, updateItemRow);
+  reconcile(deletedListEl, deleted, deletedRows, createItemRow, updateItemRow);
+
+  toggleSection(doneSectionEl, doneCountEl, done.length);
+  toggleSection(deletedSectionEl, deletedCountEl, store.deletedItems(listId).length);
+
   attachRipples();
+}
+
+// A heading for an empty section is just noise.
+function toggleSection(section, countEl, count) {
+  if (!section) return;
+  section.classList.toggle('hidden', count === 0);
+  if (countEl) countEl.textContent = String(count);
 }
 
 if (inputEl) inputEl.setAttribute('enterkeyhint','enter');
@@ -610,16 +659,17 @@ function clearCompleted() {
 // The row's new neighbours in the DOM decide its key, and only that one row is
 // written. The old scheme renumbered every sibling on every drop, which is both
 // more writes than necessary and the most conflict-prone thing two devices can do.
-function neighbourKey(el, direction, sameGroup) {
-  const step = (node) => (direction === 'prev' ? node.previousElementSibling : node.nextElementSibling);
-  let sibling = step(el);
-  while (sibling && sameGroup && sibling.dataset.done !== el.dataset.done) sibling = step(sibling);
+// Sections are separate containers now, so a row's siblings are already its group.
+// The dataset.done skipping this used to do existed only because active, done and
+// deleted rows all shared one <ul>.
+function neighbourKey(el, direction) {
+  const sibling = direction === 'prev' ? el.previousElementSibling : el.nextElementSibling;
   return sibling?.dataset.order ?? null;
 }
 
-function persistOrder(el, move, { grouped = false } = {}) {
-  const lower = neighbourKey(el, 'prev', grouped);
-  const upper = neighbourKey(el, 'next', grouped);
+function persistOrder(el, move) {
+  const lower = neighbourKey(el, 'prev');
+  const upper = neighbourKey(el, 'next');
   try {
     const key = move(el.dataset.id, lower, upper);
     if (key) el.dataset.order = key;
@@ -632,7 +682,7 @@ function persistOrder(el, move, { grouped = false } = {}) {
 }
 
 const persistListOrder = (el) => persistOrder(el, (id, lo, hi) => store.moveList(id, lo, hi));
-const persistItemsOrder = (el) => persistOrder(el, (id, lo, hi) => store.moveItem(listId, id, lo, hi), { grouped: true });
+const persistItemsOrder = (el) => persistOrder(el, (id, lo, hi) => store.moveItem(listId, id, lo, hi));
 
 /* ============================================================
    Mode switch
@@ -648,7 +698,11 @@ function showListView() {
   autoResizeTextarea(inputEl);
   // Rows belong to whichever list is open, so start the view from scratch.
   itemRows.clear();
+  doneRows.clear();
+  deletedRows.clear();
   listEl.replaceChildren();
+  doneListEl.replaceChildren();
+  deletedListEl.replaceChildren();
   loadListName();
   renderItems();
 }
@@ -820,6 +874,11 @@ if (backHomeBtn)        backHomeBtn.onclick = goHome;
 if (addBtn)             addBtn.onclick = addFromTextarea;
 if (clearAllBtn)        clearAllBtn.onclick = clearAll;
 if (clearCompletedBtn)  clearCompletedBtn.onclick = clearCompleted;
+if (purgeDeletedBtn)    purgeDeletedBtn.onclick = () => {
+    if (confirm('Permanently remove the deleted items? They cannot be brought back.')) {
+      store.purgeDeleted(listId);
+    }
+};
 if (shareBtn)           shareBtn.onclick = () => shareList(listId);
 if (linkDeviceBtn)      linkDeviceBtn.onclick = copyDeviceLink;
 if (listNameEl)         listNameEl.addEventListener('input', saveListName);
