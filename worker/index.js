@@ -17,6 +17,15 @@ const STORES = {
   sainsburys: ["sainsbury's", 'sainsburys', 'sainsbury'],
 };
 
+// What to put in the query. A search engine reads "Sainsbury's" very differently
+// from the id "sainsburys".
+const STORE_LABELS = {
+  asda: 'ASDA',
+  aldi: 'Aldi',
+  morrisons: 'Morrisons',
+  sainsburys: "Sainsbury's",
+};
+
 const MAX_ITEMS = 40;
 const MAX_QUERY = 80;
 
@@ -59,13 +68,19 @@ function matchesStore(source, store) {
   return needles.some((n) => haystack.includes(n));
 }
 
-async function priceFor(query, store, apiKey) {
+async function shoppingFor(q, apiKey) {
   const res = await fetch('https://google.serper.dev/shopping', {
     method: 'POST',
     headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
     // gl/hl keep results on the UK market, where these shops exist.
-    body: JSON.stringify({ q: `${query} ${store}`, gl: 'gb', hl: 'en' }),
+    body: JSON.stringify({ q, gl: 'gb', hl: 'en' }),
   });
+  return res;
+}
+
+async function priceFor(query, store, apiKey) {
+  const label = STORE_LABELS[store] ?? store;
+  const res = await shoppingFor(`${query} ${label}`, apiKey);
 
   if (!res.ok) {
     return { query, error: `lookup failed (${res.status})` };
@@ -112,6 +127,25 @@ export default {
     const store = String(body.store ?? '').toLowerCase();
     if (!STORES[store]) {
       return json({ error: `store must be one of ${Object.keys(STORES).join(', ')}` }, 400, origin);
+    }
+
+    if (body.debug === true) {
+      const q = String(body.items?.[0] ?? 'milk').slice(0, MAX_QUERY);
+      const label = STORE_LABELS[store] ?? store;
+      const [withStore, plain] = await Promise.all([
+        shoppingFor(`${q} ${label}`, env.SERPER_API_KEY).then((r) => r.json()),
+        shoppingFor(q, env.SERPER_API_KEY).then((r) => r.json()),
+      ]);
+      const summarise = (d) =>
+        (Array.isArray(d.shopping) ? d.shopping : [])
+          .slice(0, 10)
+          .map((r) => ({ source: r.source, price: r.price, title: (r.title || '').slice(0, 60) }));
+      return json({
+        query: q,
+        store,
+        withStoreInQuery: summarise(withStore),
+        plainQuery: summarise(plain),
+      }, 200, origin);
     }
 
     const items = Array.isArray(body.items) ? body.items : [];
