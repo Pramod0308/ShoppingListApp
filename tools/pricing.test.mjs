@@ -110,5 +110,41 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
     res.headers.get('Access-Control-Allow-Origin') !== 'https://evil.example');
 }
 
+// 7. The two-pass lookup. Naming the shop gets nothing for Sainsbury's, which only
+//    appears as sainsburys.co.uk in a plain search — so a miss must retry without
+//    the shop name rather than reporting "not stocked".
+{
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const { q } = JSON.parse(init.body);
+    calls++;
+    // Naming the shop returns nothing at all, exactly as the live API does.
+    const shopping = /sainsburys/i.test(q)
+      ? []
+      : [{ title: "Sainsbury's British Semi Skimmed Milk", source: 'sainsburys.co.uk', price: '£1.75' }];
+    return new Response(JSON.stringify({ shopping }), { status: 200 });
+  };
+
+  const body = await (await call({ store: 'sainsburys', items: ['semi skimmed milk'] })).json();
+  check('falls back to a plain search when naming the shop finds nothing',
+    body.results[0].price === 1.75, JSON.stringify(body.results[0]));
+  check('the seller domain counts as the shop', body.results[0].source === 'sainsburys.co.uk');
+  check('the fallback costs one extra call, not more', calls === 2, `calls=${calls}`);
+}
+
+// 8. A shop that is genuinely absent stays absent after both passes.
+{
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ shopping: [
+      { title: 'Tesco Milk', source: 'Tesco', price: '£1.20' },
+    ] }), { status: 200 });
+  };
+  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  check('absent after both passes is still unavailable', body.results[0].unavailable === true);
+  check('both passes were tried', calls === 2, `calls=${calls}`);
+}
+
 console.log(failures === 0 ? 'pricing: all checks passed' : `pricing: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

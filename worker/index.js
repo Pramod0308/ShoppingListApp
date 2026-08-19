@@ -19,11 +19,13 @@ const STORES = {
 
 // What to put in the query. A search engine reads "Sainsbury's" very differently
 // from the id "sainsburys".
+// No apostrophe: "Sainsbury's" in the query returns no shopping results at all,
+// while "Sainsburys" behaves like the others.
 const STORE_LABELS = {
   asda: 'ASDA',
   aldi: 'Aldi',
   morrisons: 'Morrisons',
-  sainsburys: "Sainsbury's",
+  sainsburys: 'Sainsburys',
 };
 
 const MAX_ITEMS = 40;
@@ -78,20 +80,33 @@ async function shoppingFor(q, apiKey) {
   return res;
 }
 
-async function priceFor(query, store, apiKey) {
-  const label = STORE_LABELS[store] ?? store;
-  const res = await shoppingFor(`${query} ${label}`, apiKey);
-
-  if (!res.ok) {
-    return { query, error: `lookup failed (${res.status})` };
-  }
-
+async function findListing(q, store, apiKey) {
+  const res = await shoppingFor(q, apiKey);
+  if (!res.ok) return { error: `lookup failed (${res.status})` };
   const data = await res.json();
   const results = Array.isArray(data.shopping) ? data.shopping : [];
-
   // The store filter is what produces the availability answer: no listing from that
   // seller means it is not sold there, which is a result rather than a failure.
   const hit = results.find((r) => matchesStore(r.source, store) && parsePrice(r.price) !== null);
+  return { hit };
+}
+
+async function priceFor(query, store, apiKey) {
+  const label = STORE_LABELS[store] ?? store;
+
+  // Naming the shop usually gets its own listings straight away. Sainsbury's is the
+  // exception: it returns nothing when named, but shows up as sainsburys.co.uk in a
+  // plain search — so a miss falls back to searching the product alone and filtering
+  // the sellers. The second call only happens on a miss.
+  let { hit, error } = await findListing(`${query} ${label}`, store, apiKey);
+  if (error) return { query, error };
+
+  if (!hit) {
+    const plain = await findListing(query, store, apiKey);
+    if (plain.error) return { query, error: plain.error };
+    hit = plain.hit;
+  }
+
   if (!hit) return { query, unavailable: true };
 
   return {
