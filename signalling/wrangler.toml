@@ -1,0 +1,13 @@
+name = "shopnest-signalling"
+main = "index.js"
+compatibility_date = "2026-08-01"
+
+[[durable_objects.bindings]]
+name = "SIGNALLING"
+class_name = "SignallingRoom"
+
+# new_sqlite_classes, not new_classes: SQLite-backed Durable Objects are the ones
+# available on the Workers free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SignallingRoom"]

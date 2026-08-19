@@ -101,12 +101,33 @@ published.
 Documents from before the split — both the single document that held every list, and
 the plain-object shape before that — are converted on first load.
 
-**The signalling servers in `assets/www/sync-config.js` are the public y-webrtc demo
-servers and are frequently unreachable.** Run your own and put it at the front of that
-list:
+**The signalling servers in `assets/www/sync-config.js` default to the public
+y-webrtc demo servers, which are frequently unreachable.** `signalling/` is a
+replacement you can run yourself — a Cloudflare Worker backed by a Durable Object,
+which is what lets every peer of a room meet in one place. Durable Objects are on
+the Workers free plan (100k requests/day), and the SQLite-backed class this uses is
+the free-tier one.
 
 ```bash
-npx y-webrtc-signaling --port 4444
+cd signalling && npx wrangler deploy
+```
+
+Put the resulting `wss://shopnest-signalling.<subdomain>.workers.dev` at the front of
+`SIGNALING_SERVERS`. A host outside `*.workers.dev` also needs adding to
+`connect-src` in `index.html`.
+
+It relays connection offers and nothing else: topics are SHA-256 digests of a room
+secret and the offers are encrypted with that secret, so the server sees neither the
+secret nor any list content, and stores nothing.
+
+To run it locally and test it:
+
+```bash
+cd signalling && npx wrangler dev --local --port 8799
+```
+
+```bash
+node tools/signalling.test.mjs
 ```
 
 Sync is an enhancement, never a dependency: if it cannot start, the failure is logged
