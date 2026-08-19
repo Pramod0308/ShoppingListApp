@@ -47,6 +47,7 @@ const newListNameEl     = document.getElementById('newListName');
 const createListBtn     = document.getElementById('createListBtn');
 const themeToggle       = document.getElementById('themeToggle');
 const linkDeviceBtn     = document.getElementById('linkDevice');
+const profileBtn        = document.getElementById('profileBtn');
 const sortToggleBtn     = document.getElementById('sortToggle');
 const sortLabelEl       = document.getElementById('sortLabel');
 
@@ -204,6 +205,37 @@ if (sortToggleBtn) {
 }
 
 /* ============================================================
+   WHO
+
+   Names come from a profile that syncs in the documents, not from an account —
+   there is no server to authenticate against. Colours are picked from a fixed
+   palette by index so they survive syncing as a number and read on both themes.
+   ============================================================ */
+const PERSON_COLOURS = [
+  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b',
+  '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6',
+];
+const personColour = (n) => PERSON_COLOURS[(n ?? 0) % PERSON_COLOURS.length];
+const initialOf = (name) => (name || '?').trim().charAt(0).toUpperCase() || '?';
+
+function renderProfileButton() {
+  if (!profileBtn) return;
+  const me = store.profile();
+  profileBtn.textContent = initialOf(me.name);
+  profileBtn.style.backgroundColor = personColour(me.colour);
+  profileBtn.title = `You are "${me.name}" — tap to change`;
+}
+
+function editProfile() {
+  const me = store.profile();
+  const name = prompt('Your name, as other people on shared lists will see it:', me.name);
+  if (name === null) return;
+  store.setProfile({ name });
+  renderProfileButton();
+  showToast('Name updated everywhere you have shared a list.');
+}
+
+/* ============================================================
    RENDERING
 
    Rows are reconciled by id instead of being thrown away and rebuilt. Wiping the
@@ -357,9 +389,11 @@ function createListCard(list) {
   countEl.className = '';
   const updatedEl = document.createElement('span');
   updatedEl.className = 'metaRow truncate';
-  const dot = document.createElement('span');
-  dot.className = 'metaRow h-0.5 w-0.5 bg-faint rounded-full shrink-0';
-  meta.append(countEl, dot, updatedEl);
+  const sep = document.createElement('span');
+  sep.className = 'metaRow h-0.5 w-0.5 bg-faint rounded-full shrink-0';
+  const creatorEl = document.createElement('span');
+  creatorEl.className = 'hidden truncate font-medium';
+  meta.append(countEl, sep, updatedEl, creatorEl);
 
   const actions = document.createElement('div');
   actions.className = 'actions flex items-center gap-0.5 shrink-0';
@@ -389,12 +423,12 @@ function createListCard(list) {
 
   textCol.append(meta);
   card.append(rowTop, actions);
-  card.refs = { title, countEl, updatedEl, drag };
+  card.refs = { title, countEl, updatedEl, drag, creatorEl };
   return card;
 }
 
 function updateListCard(card, list) {
-  const { title, countEl, updatedEl, drag } = card.refs;
+  const { title, countEl, updatedEl, drag, creatorEl } = card.refs;
 
   // Dragging only means anything when the manual order is the one on screen.
   const draggable = listSort === 'custom';
@@ -407,6 +441,17 @@ function updateListCard(card, list) {
 
   const count = plural(list.itemCount, 'item');
   if (countEl.textContent !== count) countEl.textContent = count;
+
+  // Only worth saying when somebody else made it — on your own lists it is noise.
+  const creator = list.createdBy && list.createdBy !== store.profile().id
+    ? store.people(list.id)[list.createdBy]
+    : null;
+  const by = creator ? `by ${creator.name}` : '';
+  if (creatorEl.textContent !== by) {
+    creatorEl.textContent = by;
+    creatorEl.classList.toggle('hidden', !by);
+    creatorEl.style.color = creator ? personColour(creator.colour) : '';
+  }
 
   const updated = ago(list.updatedAt);
   if (updatedEl.textContent !== updated) {
@@ -434,6 +479,7 @@ function renderLists() {
     emptyStateEl.remove();
   }
 
+  renderProfileButton();
   reconcile(listsGrid, lists, listRows, createListCard, updateListCard);
   attachRipples();
 }
@@ -441,6 +487,10 @@ function renderLists() {
 /* ============================================================
    LIST VIEW (items)
    ============================================================ */
+// Who is on the open list, resolved once per render rather than per row.
+let people = {};
+let shared = false;
+
 const itemRows = new Map();
 const doneRows = new Map();
 const deletedRows = new Map();
@@ -509,6 +559,9 @@ function createItemRow(item) {
   const mobileMeta = document.createElement('span');
   mobileMeta.className = 'sr-only';
 
+  const dot = document.createElement('span');
+  dot.className = 'hidden w-1.5 h-1.5 rounded-full shrink-0 mr-1.5';
+
   const actionsContainer = document.createElement('div');
   actionsContainer.className = 'flex items-center gap-0.5';
 
@@ -524,15 +577,15 @@ function createItemRow(item) {
   handle.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
   actionsContainer.append(del, handle);
-  rightContainer.append(mobileMeta, actionsContainer);
+  rightContainer.append(mobileMeta, dot, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, handle, label };
+  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, handle, label } = li.refs;
+  const { cb, text, meta, mobileMeta, del, handle, label, dot } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -559,20 +612,33 @@ function updateItemRow(li, item) {
   // a control that quietly does nothing.
   handle.classList.toggle('hidden', deleted || done);
 
+  // Naming the author on a list only one person has touched is noise, so it
+  // appears once a list actually has more than one person in it.
+  const who = shared && item.authorId && people[item.authorId]
+    ? ` by ${people[item.authorId].name}`
+    : '';
   const stamp = deleted
     ? `Deleted ${ago(item.deletedAt)}`
-    : `Added ${ago(item.createdAt)}`;
+    : `Added${who} ${ago(item.createdAt)}`;
   if (meta.textContent !== stamp) {
     meta.textContent = stamp;
     meta.title = fmt(deleted ? item.deletedAt : item.createdAt);
     mobileMeta.textContent = stamp;
   }
 
+  const author = item.authorId ? people[item.authorId] : null;
+  dot.style.backgroundColor = author ? personColour(author.colour) : 'transparent';
+  dot.classList.toggle('hidden', !shared || !author);
+  dot.title = author ? `Added by ${author.name}` : '';
+
   li.dataset.order = item.order;
 }
 
 function renderItems() {
   if (!remainingEl || !listEl) return;
+
+  people = store.people(listId);
+  shared = Object.keys(people).length > 1;
 
   const active = store.activeItems(listId);
   const outstanding = active.filter(i => !i.done);
@@ -881,6 +947,7 @@ if (purgeDeletedBtn)    purgeDeletedBtn.onclick = () => {
 };
 if (shareBtn)           shareBtn.onclick = () => shareList(listId);
 if (linkDeviceBtn)      linkDeviceBtn.onclick = copyDeviceLink;
+if (profileBtn)         profileBtn.onclick = editProfile;
 if (listNameEl)         listNameEl.addEventListener('input', saveListName);
 if (listNameEl)         listNameEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); listNameEl.blur(); }

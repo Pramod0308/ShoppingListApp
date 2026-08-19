@@ -131,6 +131,84 @@ export class Store {
     this.#lists.delete(id);
   }
 
+  /* ---------- Who ----------
+
+     A person is a name and a colour, nothing more: there is no account and no
+     server to check one against. The profile lives in the index document, so all
+     of one person's devices share a single identity; writing to a list copies it
+     into that list's `people` map, so whoever a list is shared with can resolve
+     names offline without contacting anyone.
+
+     Names are self-asserted. Anyone holding a list's share link could claim any
+     name — but they can already edit everything in it, so this is honest labelling
+     among people who trust each other, not proof of identity.
+     ---------------------------------- */
+
+  get #profileMap() {
+    return this.#indexDoc.getMap('profile');
+  }
+
+  profile() {
+    const map = this.#profileMap;
+    if (!map.get('id')) {
+      this.#indexDoc.transact(() => {
+        map.set('id', newId('who-'));
+        map.set('name', defaultName());
+        map.set('colour', Math.floor(Math.random() * COLOURS));
+      });
+    }
+    return {
+      id: map.get('id'),
+      name: map.get('name') ?? '',
+      colour: map.get('colour') ?? 0,
+    };
+  }
+
+  /// Renaming has to reach every list already carrying the old name, or shared
+  /// lists keep showing whoever this person used to be.
+  setProfile({ name, colour }) {
+    const map = this.#profileMap;
+    this.profile();
+    this.#indexDoc.transact(() => {
+      if (typeof name === 'string') map.set('name', name.trim() || defaultName());
+      if (typeof colour === 'number') map.set('colour', colour);
+    });
+    for (const id of this.#lists.keys()) this.#stampPerson(id);
+    this.#emit();
+  }
+
+  /// Copies the current profile into a list's directory of people. Called on every
+  /// write, so a name is present wherever that person has actually done something.
+  #stampPerson(listId) {
+    const handle = this.#lists.get(listId);
+    if (!handle) return null;
+    const me = this.profile();
+    const people = handle.doc.getMap('people');
+    const existing = people.get(me.id);
+    if (!(existing instanceof Y.Map)) {
+      people.set(me.id, mapOf({ name: me.name, colour: me.colour }));
+    } else if (existing.get('name') !== me.name || existing.get('colour') !== me.colour) {
+      handle.doc.transact(() => {
+        existing.set('name', me.name);
+        existing.set('colour', me.colour);
+      });
+    }
+    return me.id;
+  }
+
+  /// personId -> { name, colour } for everyone who has touched this list.
+  people(listId) {
+    const handle = this.#lists.get(listId);
+    const out = {};
+    if (!handle) return out;
+    handle.doc.getMap('people').forEach((person, id) => {
+      if (person instanceof Y.Map) {
+        out[id] = { name: person.get('name') ?? '', colour: person.get('colour') ?? 0 };
+      }
+    });
+    return out;
+  }
+
   /* ---------- Reading ---------- */
 
   /// Plain snapshots, so nothing outside this module has to know about Yjs types.
@@ -148,6 +226,10 @@ export class Store {
         name: handle ? handle.doc.getText('name').toString() : '',
         updatedAt: entry.get('updated_at') ?? '',
         itemCount: handle ? this.activeItems(id).length : 0,
+        // Someone who joined by share link has an index entry they wrote
+        // themselves, so the creator has to come from inside the list.
+        createdBy: entry.get('created_by')
+          ?? (handle ? handle.doc.getMap('meta').get('created_by') ?? null : null),
         loaded: !!handle,
       });
     });
@@ -183,6 +265,7 @@ export class Store {
         done: item.get('done') === true,
         deleted: deletedAt !== null,
         deletedAt,
+        authorId: item.get('author_id') ?? null,
         createdAt: item.get('created_at') ?? '',
         order: item.get('order') ?? '',
       });
@@ -218,6 +301,11 @@ export class Store {
     }));
 
     this.#ensureList(id, secret).doc.getText('name').insert(0, name);
+    // Recorded on the index entry and inside the list, so someone the list is
+    // shared with can see who made it without access to the owner's index.
+    const me = this.#stampPerson(id);
+    this.#index.get(id).set('created_by', me);
+    this.#lists.get(id).doc.getMap('meta').set('created_by', me);
     this.#emit();
     return id;
   }
@@ -247,7 +335,7 @@ export class Store {
       created_at: nowIso(),
       updated_at: nowIso(),
     }));
-    this.#ensureList(id, secret);
+    this.#ensureList(id, secret).ready.then(() => this.#stampPerson(id));
     return id;
   }
 
@@ -266,11 +354,13 @@ export class Store {
     const firstOpen = this.activeItems(listId).find((i) => !i.done);
     const keys = keysBetween(null, firstOpen ? firstOpen.order : null, lines.length);
     const now = nowIso();
+    const author = this.#stampPerson(listId);
 
     handle.doc.transact(() => {
       lines.forEach((line, idx) => {
         handle.items.set(newId('item-'), mapOf({
           done: false, created_at: now, updated_at: now, order: keys[idx],
+          author_id: author,
         }, 'text', line));
       });
     });
@@ -296,6 +386,7 @@ export class Store {
     handle.items.set(id, mapOf({
       done: items[at].done, created_at: now, updated_at: now,
       order: keyBetween(items[at].order, upper),
+      author_id: this.#stampPerson(listId),
     }, 'text', ''));
     this.#touchIndex(listId);
     return id;
@@ -476,6 +567,20 @@ export class Store {
     persistence.destroy();
     legacy.destroy();
   }
+}
+
+export const COLOURS = 8;
+
+// There is no way to read a device name from a browser, so start from the platform
+// and let it be edited. One person's devices share this via the index document, so
+// two Macs belonging to the same person do not collide.
+function defaultName() {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad/.test(ua)) return 'iPhone';
+  if (/Android/.test(ua)) return 'Android';
+  if (/Macintosh/.test(ua)) return 'Mac';
+  if (/Windows/.test(ua)) return 'Windows';
+  return 'Someone';
 }
 
 function mapOf(fields, textField, textValue) {
