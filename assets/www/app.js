@@ -2,7 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
-import { STORES, isConfigured, priceItems, formatMoney } from "./pricing.js";
+import { STORES, isConfigured, priceItems, formatMoney, sourceName, onProgress } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -272,7 +272,8 @@ function setSummary(text, tone = 'muted') {
 
 async function estimateCost() {
   if (!isConfigured()) {
-    setSummary('Price lookup is not set up yet — see PRICE_API_URL in sync-config.js.', 'danger');
+    // A plain browser tab has no shell to do the lookup and no worker configured.
+    setSummary('Price estimates only work in the ShopNest app.', 'danger');
     return;
   }
 
@@ -287,10 +288,13 @@ async function estimateCost() {
 
   estimateBtn.disabled = true;
   setSummary(`Checking ${label}…`);
+  // Reading a shop's pages takes seconds per item, so say how far along it is.
+  onProgress((done, total) => setSummary(`Checking ${label} — ${done} of ${total}…`));
   try {
     prices = await priceItems(target, storeId);
   } finally {
     estimateBtn.disabled = false;
+    onProgress(null);
   }
   renderItems();
 
@@ -307,7 +311,7 @@ async function estimateCost() {
   }
 
   if (priced === 0 && failed > 0) {
-    setSummary(`Could not reach the price service (${failed} ${failed === 1 ? 'item' : 'items'}).`, 'danger');
+    setSummary(`Could not get prices from ${sourceName() ?? 'anywhere'} (${plural(failed, 'item')}).`, 'danger');
     return;
   }
 

@@ -109,6 +109,21 @@ jobs:
         if: always()
         run: rm -f android/upload-keystore.jks android/key.properties
 
+      # A sideloadable build of every push. The release APK above is only produced
+      # for tags, so without this there is no way to actually run a change on a
+      # phone — which matters most for anything the browser cannot exercise.
+      - name: Build Debug APK
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: flutter build apk --debug --android-skip-build-dependency-validation
+
+      - name: Upload Debug APK
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopnest-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -122,3 +137,28 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The iOS target has existed since the project was created but has never been
+  # compiled. --no-codesign needs no Apple account: it proves the Podfile generates,
+  # pods resolve, the plugins compile and the app links. It produces nothing
+  # installable.
+  ios:
+    name: Build iOS
+    needs: web
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build iOS
+        run: flutter build ios --release --no-codesign

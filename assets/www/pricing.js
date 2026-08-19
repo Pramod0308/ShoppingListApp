@@ -1,10 +1,18 @@
 // Estimating what a list costs at one shop.
 //
-// Prices come from the Worker in worker/ — the app cannot call a supermarket or a
-// search engine itself, because neither allows cross-origin browser requests and an
-// API key in client JavaScript is a public key.
+// A page cannot fetch a supermarket's site — no CORS — and a static bundle cannot
+// hold an API key, so the price has to come from somewhere with neither limit.
+// Two sources, in order:
 //
-// Item text only leaves the device when the estimate button is pressed. Nothing here
+//   1. The mobile shell. It loads the shop's own page in a headless WebView and
+//      reads the price out, using this device's connection. No key, no server, no
+//      cost. Only exists inside the installed app.
+//   2. The Worker in worker/, if PRICE_API_URL was configured. This is what makes
+//      the published website able to price anything at all.
+//
+// With neither, the button says so rather than failing at nothing.
+//
+// Item text leaves the device only when the estimate button is pressed. Nothing here
 // runs in the background, and no other part of a list is ever sent.
 
 import { PRICE_API_URL } from './sync-config.js';
@@ -19,7 +27,15 @@ export const STORES = [
 const CACHE_KEY = 'shopnest-prices';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const isConfigured = () => Boolean(PRICE_API_URL);
+// The shell injects this bridge; a plain browser tab has no such object.
+const shell = () => globalThis.flutter_inappwebview ?? null;
+
+export const hasShellLookup = () => Boolean(shell()?.callHandler);
+export const isConfigured = () => hasShellLookup() || Boolean(PRICE_API_URL);
+
+/// Where a lookup would go, for messages the user reads.
+export const sourceName = () =>
+  hasShellLookup() ? 'this device' : PRICE_API_URL ? 'the price service' : null;
 
 // Cache keys ignore case and spacing so "Oat Milk" and "oat milk" are one lookup.
 const normalise = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -72,13 +88,7 @@ export async function priceItems(items, store) {
 
   let payload;
   try {
-    const res = await fetch(PRICE_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ store, items: misses.map((i) => i.text) }),
-    });
-    if (!res.ok) throw new Error(`lookup failed (${res.status})`);
-    payload = await res.json();
+    payload = await lookup(misses.map((i) => i.text), store);
   } catch (err) {
     for (const item of misses) out.set(item.id, { error: err.message });
     return out;
@@ -97,6 +107,30 @@ export async function priceItems(items, store) {
 
   writeCache(cache);
   return out;
+}
+
+async function lookup(items, store) {
+  const bridge = shell();
+  if (bridge?.callHandler) {
+    // Reading a shop's own page takes seconds per item, so the shell reports
+    // progress through this hook while it works.
+    return bridge.callHandler('priceLookup', { store, items });
+  }
+  if (!PRICE_API_URL) {
+    throw new Error('Price lookup only works in the app');
+  }
+  const res = await fetch(PRICE_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ store, items }),
+  });
+  if (!res.ok) throw new Error(`lookup failed (${res.status})`);
+  return res.json();
+}
+
+/// Called by the shell as it works through a list.
+export function onProgress(fn) {
+  globalThis.__shopnestPriceProgress = fn;
 }
 
 export function formatMoney(amount) {

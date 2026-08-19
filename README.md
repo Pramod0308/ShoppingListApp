@@ -173,11 +173,20 @@ previous build after an app update.
 The list view can price what is on it against one supermarket (ASDA, Aldi,
 Morrisons, Sainsbury's) and flag anything that store does not stock.
 
-None of those retailers publish a price API, and a browser cannot call their sites
-directly, so prices come from Google Shopping results via
-[Serper.dev](https://serper.dev/) — 2,500 credits free, then about $0.30 per 1,000
-queries. Matching the chosen store against a listing's seller is what produces the
-availability flag: no listing from that seller means it is not sold there.
+None of those retailers publish a price API and a browser cannot call their sites —
+no CORS, and a static bundle cannot hold a key. So the **app** does it: the Flutter
+shell opens the shop's own search page in a headless WebView and reads the price out
+of it, using the device's own connection. No key, no server, no subscription.
+
+Extraction prefers the page's own JSON-LD (shops publish it so search engines can
+show prices) and falls back to scanning for a `£x.xx`. The adapters live in
+`lib/price_lookup.dart`, one per retailer, so a site change is repaired in one place —
+and it will need repairing from time to time. This does breach the retailers' terms
+of use.
+
+**This only works in the installed app.** The published website has no shell, so the
+button there says so. `PRICE_API_URL` below is an optional second source that makes
+the website work too.
 
 An API key cannot ship in a static bundle, so `worker/` is a Cloudflare Worker that
 holds the key and answers one narrow question — what does this product cost at this
