@@ -783,15 +783,24 @@ function toggleSection(section, countEl, count) {
 
 if (inputEl) inputEl.setAttribute('enterkeyhint','enter');
 function autoResizeTextarea(el) {
-  // A hidden element reports scrollHeight 0, and this used to run once at load
-  // while the list view was still hidden — pinning the composer to zero height.
-  if (!el || el.offsetParent === null) return;
+  // Two states give a measurement worth nothing. A hidden element reports
+  // scrollHeight 0, which used to pin the composer shut. A laid-out element in a
+  // page with no width — a background tab reports innerWidth 0 — wraps its text
+  // into a column one character wide, so scrollHeight comes back enormous and the
+  // composer sticks at its 200px ceiling. Measure only when there is a width.
+  if (!el || el.offsetParent === null || el.clientWidth === 0) return;
   el.style.height = 'auto';
   el.style.height = Math.min(200, el.scrollHeight) + 'px';
 }
 if (inputEl) {
     autoResizeTextarea(inputEl);
     inputEl.addEventListener('input', () => autoResizeTextarea(inputEl));
+    // Self-correcting: a measurement taken with no layout is re-taken as soon as
+    // there is some, rather than leaving the composer wrong until the next keystroke.
+    window.addEventListener('resize', () => autoResizeTextarea(inputEl));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) autoResizeTextarea(inputEl);
+    });
     inputEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
