@@ -4,10 +4,14 @@
 //   cd signalling && npx wrangler dev --local --port 8799
 //   node tools/signalling.test.mjs
 //
-// Not part of `npm test`, because it needs that server up.
+// Or against the deployed one:
+//
+//   SIGNAL_URL=wss://shopnest-signalling.example.workers.dev node tools/signalling.test.mjs
+//
+// Not part of `npm test`, because it needs a server up.
 import WebSocket from 'ws';
 
-const URL = 'ws://localhost:8799';
+const URL = process.env.SIGNAL_URL || 'ws://localhost:8799';
 let failures = 0;
 const check = (label, ok, detail='') => {
   if (!ok) { failures++; console.error(`FAIL ${label} ${detail}`); }
