@@ -182,12 +182,23 @@ previous build after an app update.
 
 ## Known gaps
 
-- There is no archive: deleting a list is the only way to get rid of it. The
-  Archive and Settings tabs that used to sit in the bottom navigation were removed
-  because nothing was behind them; the mockups for them are in `design/mockups/`.
-- The signalling servers in `sync-config.js` are the public y-webrtc demo servers.
-  Sync will be unreliable until you run your own.
-- No LICENSE file; the repository is currently all-rights-reserved by default.
+- There is no archive: deleting a list hides it in the Deleted section, and Clear
+  removes it for good. The Archive and Settings tabs that used to sit in the bottom
+  navigation were removed because nothing was behind them; the mockups for them are
+  in `design/mockups/`.
+- The cost estimate only works in the installed app. The published website has no
+  shell to read a shop's page with, so the button there says so.
+- Release signing is wired to repository secrets, so a tag build fails rather than
+  publishing a debug-signed APK if they are ever missing.
+
+## Licence
+
+**None. All rights reserved.**
+
+This is deliberate rather than an oversight: without a licence, default copyright
+applies and the code may not be copied, modified or redistributed, even though the
+repository is public and the app is deployed. If that should change, adding a LICENSE
+file is the only step needed.
 
 ## Cost estimate
 
