@@ -1,6 +1,6 @@
 {
-  "name": "ShopNest — Smart Shopping List",
-  "short_name": "ShopNest",
+  "name": "ShopIt — Smart Shopping List",
+  "short_name": "ShopIt",
   "description": "Shopping lists that work offline and sync straight between your devices.",
   "start_url": ".",
   "scope": ".",

@@ -1,4 +1,4 @@
-# ShopNest
+# ShopIt
 
 Shopping lists that work offline and sync straight between devices — no account, no
 server holding your data.

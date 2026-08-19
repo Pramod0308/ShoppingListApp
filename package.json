@@ -2,7 +2,7 @@
   "name": "shopnest-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Build tooling for the ShopNest web bundle shipped in assets/www.",
+  "description": "Build tooling for the ShopIt web bundle shipped in assets/www.",
   "type": "module",
   "scripts": {
     "build": "npm run build:vendor && npm run build:css && npm run build:sw",

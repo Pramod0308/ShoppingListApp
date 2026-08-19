@@ -134,7 +134,7 @@ jobs:
           files: build/app/outputs/flutter-apk/app-release.apk
           name: Release ${{ github.ref_name }}
           body: |
-            ShopNest Native Android APK Release.
+            ShopIt Native Android APK Release.
             Download the `app-release.apk` below and install it directly on your Android device!
           draft: false
           prerelease: false

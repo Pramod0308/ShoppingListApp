@@ -1,4 +1,4 @@
-// WebRTC signalling for ShopNest.
+// WebRTC signalling for ShopIt.
 //
 // Peers cannot find each other without an introducer. The app has been using the
 // public y-webrtc demo servers, which are frequently unreachable — this is the same
@@ -117,7 +117,7 @@ export default {
       return new Response('ok', { headers: { 'Content-Type': 'text/plain' } });
     }
     if (request.headers.get('Upgrade') !== 'websocket') {
-      return new Response('ShopNest signalling server — connect over WebSocket.', {
+      return new Response('ShopIt signalling server — connect over WebSocket.', {
         status: 200,
         headers: { 'Content-Type': 'text/plain' },
       });
