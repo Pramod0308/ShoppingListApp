@@ -16,7 +16,7 @@
 // The page's Content-Security-Policy allows wss: only. Pointing this at a plaintext
 // ws:// server for local testing means relaxing connect-src in index.html to match.
 export const SIGNALING_SERVERS = [
-  'wss://y-webrtc-eu.fly.dev',
+  'wss://shopnest-signalling.shopitnest.workers.dev'
 ];
 
 // Where the web build is published.

@@ -11,13 +11,25 @@
 //
 // Everyone must meet in one place for that relaying to work, which is exactly what a
 // Durable Object provides: one instance, all sockets, no shared-state problem.
+//
+// One object for the whole service is normally an anti-pattern — it is a single
+// coordination point rather than one per room. It is deliberate here: a y-webrtc
+// client opens one socket and subscribes it to several topics at once (this app uses
+// a device room plus a room per list), so sharding by topic would split a single
+// socket across objects it cannot be in. The ceiling is the free plan's 100k
+// requests/day, which is far beyond a household; a large deployment would need a
+// session-object-per-client fanning out to a topic-object-per-room.
+
+import { DurableObject } from 'cloudflare:workers';
 
 const PROTOCOL = ['subscribe', 'unsubscribe', 'publish', 'ping'];
 
-export class SignallingRoom {
-  constructor(state) {
-    this.state = state;
-  }
+// serializeAttachment caps at 16KB. Topics are ~35 bytes each, so this is roughly
+// 460 rooms on one socket — far past anything real, but bounded rather than silently
+// failing to serialize.
+const MAX_TOPICS = 400;
+
+export class SignallingRoom extends DurableObject {
 
   async fetch(request) {
     if (request.headers.get('Upgrade') !== 'websocket') {
@@ -29,7 +41,7 @@ export class SignallingRoom {
 
     // Hibernation: the object may be evicted between messages, so a socket's
     // subscriptions travel with the socket rather than living in memory here.
-    this.state.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server);
     server.serializeAttachment([]);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -62,8 +74,12 @@ export class SignallingRoom {
       const asked = Array.isArray(message.topics) ? message.topics.filter((t) => typeof t === 'string') : [];
       const current = new Set(this.topicsOf(ws));
       for (const topic of asked) {
-        if (message.type === 'subscribe') current.add(topic);
-        else current.delete(topic);
+        if (message.type === 'subscribe') {
+          if (current.size >= MAX_TOPICS) break;
+          current.add(topic);
+        } else {
+          current.delete(topic);
+        }
       }
       ws.serializeAttachment([...current]);
       return;
@@ -72,7 +88,7 @@ export class SignallingRoom {
     // publish: relay verbatim to everyone on the topic, including the sender —
     // y-webrtc uses the `clients` count to decide whether anyone else is there.
     if (!message.topic) return;
-    const receivers = this.state
+    const receivers = this.ctx
       .getWebSockets()
       .filter((peer) => this.topicsOf(peer).includes(message.topic));
 
@@ -109,7 +125,6 @@ export default {
 
     // One room for everyone: peers are separated by topic, not by object, and
     // sharding by topic would break a client that subscribes to several at once.
-    const id = env.SIGNALLING.idFromName('shopnest');
-    return env.SIGNALLING.get(id).fetch(request);
+    return env.SIGNALLING.getByName('shopnest').fetch(request);
   },
 };

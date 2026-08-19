@@ -11,3 +11,7 @@ class_name = "SignallingRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SignallingRoom"]
+
+# Logs and traces for a service that is otherwise invisible when it misbehaves.
+[observability]
+enabled = true
