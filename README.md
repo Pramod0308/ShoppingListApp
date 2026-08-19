@@ -167,3 +167,37 @@ previous build after an app update.
 - The signalling servers in `sync-config.js` are the public y-webrtc demo servers.
   Sync will be unreliable until you run your own.
 - No LICENSE file; the repository is currently all-rights-reserved by default.
+
+## Cost estimate
+
+The list view can price what is on it against one supermarket (ASDA, Aldi,
+Morrisons, Sainsbury's) and flag anything that store does not stock.
+
+None of those retailers publish a price API, and a browser cannot call their sites
+directly, so prices come from Google Shopping results via
+[Serper.dev](https://serper.dev/) — 2,500 credits free, then about $0.30 per 1,000
+queries. Matching the chosen store against a listing's seller is what produces the
+availability flag: no listing from that seller means it is not sold there.
+
+An API key cannot ship in a static bundle, so `worker/` is a Cloudflare Worker that
+holds the key and answers one narrow question — what does this product cost at this
+shop. To deploy it:
+
+```bash
+cd worker && npx wrangler secret put SERPER_API_KEY && npx wrangler deploy
+```
+
+Then put the deployed URL in `PRICE_API_URL` in `assets/www/sync-config.js`. Until
+that is set the button says so rather than failing. A host outside `*.workers.dev`
+also needs adding to `connect-src` in `index.html`, or the browser refuses the
+request.
+
+**Item text leaves the device when the button is pressed** — only then, never in the
+background, and nothing else about a list is sent. Results are cached per item and
+store for 7 days in `localStorage`, so re-estimating the same list costs nothing and
+works offline.
+
+Estimates are estimates: "milk" is not a product, so the matched listing's title is
+shown on each price. Aldi is thinly represented in shopping results because its UK
+site is largely a marketing site, so it will flag unavailable more often than the
+others.

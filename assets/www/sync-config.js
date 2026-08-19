@@ -26,3 +26,11 @@ export const SIGNALING_SERVERS = [
 // the device it gets sent to. Change it if the app moves, or if a custom domain is
 // configured for the Pages site.
 export const PUBLIC_BASE_URL = 'https://pramod0308.github.io/ShoppingListApp/';
+
+// Where the price Worker in worker/ is deployed, e.g.
+// 'https://shopnest-prices.<your-subdomain>.workers.dev'.
+//
+// Empty means the cost estimate is switched off and the button says so, rather than
+// the app failing at a URL that was never set. Anything other than a *.workers.dev
+// host also needs adding to connect-src in index.html, or the browser refuses it.
+export const PRICE_API_URL = '';

@@ -11,7 +11,7 @@
     "watch:css": "tailwindcss -c tailwind.config.js -i web-src/styles.css -o assets/www/styles.css --watch",
     "fonts": "node tools/fetch-fonts.mjs",
     "serve": "node tools/serve.mjs",
-    "test": "node tools/order-key.test.mjs && node tools/doc-model.test.mjs",
+    "test": "node tools/order-key.test.mjs && node tools/doc-model.test.mjs && node tools/pricing.test.mjs",
     "icons": "node tools/make-icons.mjs",
     "build:sw": "node tools/make-sw.mjs"
   },

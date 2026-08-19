@@ -2,6 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
+import { STORES, isConfigured, priceItems, formatMoney } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -71,6 +72,9 @@ const deletedSectionEl  = document.getElementById('deletedSection');
 const deletedListEl     = document.getElementById('deletedList');
 const deletedCountEl    = document.getElementById('deletedCount');
 const purgeDeletedBtn   = document.getElementById('purgeDeleted');
+const storeSelectEl     = document.getElementById('storeSelect');
+const estimateBtn       = document.getElementById('estimateBtn');
+const estimateSummary   = document.getElementById('estimateSummary');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -233,6 +237,89 @@ function editProfile() {
   store.setProfile({ name });
   renderProfileButton();
   showToast('Name updated everywhere you have shared a list.');
+}
+
+/* ============================================================
+   COST ESTIMATE
+
+   Prices are per (item, store) and live outside the documents on purpose: they are
+   not list data, and syncing them to everyone a list is shared with would add
+   conflicts and noise for no benefit. Results are held for the current render only.
+   ============================================================ */
+let prices = new Map();
+
+if (storeSelectEl) {
+  storeSelectEl.innerHTML = STORES
+    .map((s) => `<option value="${s.id}">${s.label}</option>`)
+    .join('');
+  storeSelectEl.value = localStorage.getItem('store') || STORES[0].id;
+  storeSelectEl.onchange = () => {
+    localStorage.setItem('store', storeSelectEl.value);
+    // Prices belong to the store they were fetched for.
+    prices = new Map();
+    setSummary('');
+    renderItems();
+  };
+}
+
+function setSummary(text, tone = 'muted') {
+  if (!estimateSummary) return;
+  estimateSummary.textContent = text;
+  estimateSummary.classList.toggle('hidden', !text);
+  estimateSummary.classList.toggle('text-danger', tone === 'danger');
+  estimateSummary.classList.toggle('text-muted', tone !== 'danger');
+}
+
+async function estimateCost() {
+  if (!isConfigured()) {
+    setSummary('Price lookup is not set up yet — see PRICE_API_URL in sync-config.js.', 'danger');
+    return;
+  }
+
+  // Named storeId, not store: `store` is the document store this module already uses.
+  const storeId = storeSelectEl.value;
+  const label = STORES.find((s) => s.id === storeId)?.label ?? storeId;
+  const target = listId ? shoppableItems() : [];
+  if (target.length === 0) {
+    setSummary('Nothing to price yet.');
+    return;
+  }
+
+  estimateBtn.disabled = true;
+  setSummary(`Checking ${label}…`);
+  try {
+    prices = await priceItems(target, storeId);
+  } finally {
+    estimateBtn.disabled = false;
+  }
+  renderItems();
+
+  let total = 0;
+  let priced = 0;
+  let missing = 0;
+  let failed = 0;
+  for (const item of target) {
+    const result = prices.get(item.id);
+    if (!result) continue;
+    if (result.error) failed++;
+    else if (result.unavailable) missing++;
+    else { total += result.price; priced++; }
+  }
+
+  if (priced === 0 && failed > 0) {
+    setSummary(`Could not reach the price service (${failed} ${failed === 1 ? 'item' : 'items'}).`, 'danger');
+    return;
+  }
+
+  const parts = [`About ${formatMoney(total)} at ${label} for ${plural(priced, 'item')}`];
+  if (missing) parts.push(`${missing} not stocked there`);
+  if (failed) parts.push(`${failed} could not be checked`);
+  setSummary(parts.join(' · '));
+}
+
+// Only things still to buy get priced; done and deleted rows are not shopping.
+function shoppableItems() {
+  return store.activeItems(listId).filter((i) => !i.done).map((i) => ({ id: i.id, text: i.text }));
 }
 
 /* ============================================================
@@ -562,6 +649,9 @@ function createItemRow(item) {
   const dot = document.createElement('span');
   dot.className = 'hidden w-1.5 h-1.5 rounded-full shrink-0 mr-1.5';
 
+  const price = document.createElement('span');
+  price.className = 'hidden text-[13px] tabular-nums shrink-0 mr-1.5';
+
   const actionsContainer = document.createElement('div');
   actionsContainer.className = 'flex items-center gap-0.5';
 
@@ -577,15 +667,15 @@ function createItemRow(item) {
   handle.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
   actionsContainer.append(del, handle);
-  rightContainer.append(mobileMeta, dot, actionsContainer);
+  rightContainer.append(mobileMeta, dot, price, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot };
+  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot, price };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, handle, label, dot } = li.refs;
+  const { cb, text, meta, mobileMeta, del, handle, label, dot, price } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -630,6 +720,29 @@ function updateItemRow(li, item) {
   dot.style.backgroundColor = author ? personColour(author.colour) : 'transparent';
   dot.classList.toggle('hidden', !shared || !author);
   dot.title = author ? `Added by ${author.name}` : '';
+
+  const quote = prices.get(item.id);
+  if (!quote || deleted) {
+    price.classList.add('hidden');
+    price.textContent = '';
+    price.title = '';
+  } else {
+    price.classList.remove('hidden');
+    if (quote.error) {
+      price.textContent = '—';
+      price.className = price.className.replace(/text-(ink|faint|danger)/g, '') + ' text-faint';
+      price.title = quote.error;
+    } else if (quote.unavailable) {
+      // The point of the flag: say it is not sold here rather than quietly zero it.
+      price.textContent = 'n/a';
+      price.className = price.className.replace(/text-(ink|faint|danger)/g, '') + ' text-danger';
+      price.title = `Not stocked at ${STORES.find(x => x.id === storeSelectEl.value)?.label ?? 'this store'}`;
+    } else {
+      price.textContent = formatMoney(quote.price);
+      price.className = price.className.replace(/text-(ink|faint|danger)/g, '') + ' text-ink';
+      price.title = `${quote.title} — ${quote.source}`;
+    }
+  }
 
   li.dataset.order = item.order;
 }
@@ -763,6 +876,8 @@ function showListView() {
   if (listView) listView.classList.remove('hidden');
   autoResizeTextarea(inputEl);
   // Rows belong to whichever list is open, so start the view from scratch.
+  prices = new Map();
+  setSummary('');
   itemRows.clear();
   doneRows.clear();
   deletedRows.clear();
@@ -940,6 +1055,7 @@ if (backHomeBtn)        backHomeBtn.onclick = goHome;
 if (addBtn)             addBtn.onclick = addFromTextarea;
 if (clearAllBtn)        clearAllBtn.onclick = clearAll;
 if (clearCompletedBtn)  clearCompletedBtn.onclick = clearCompleted;
+if (estimateBtn)        estimateBtn.onclick = estimateCost;
 if (purgeDeletedBtn)    purgeDeletedBtn.onclick = () => {
     if (confirm('Permanently remove the deleted items? They cannot be brought back.')) {
       store.purgeDeleted(listId);
