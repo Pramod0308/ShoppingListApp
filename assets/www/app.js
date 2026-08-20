@@ -433,10 +433,6 @@ function deleteList(id) {
   store.deleteList(id);
 }
 
-function renameList(id, newName) {
-  store.renameList(id, (newName || '').trim() || 'Untitled list');
-}
-
 function createListCard(list) {
   const id = list.id;
 
@@ -454,24 +450,7 @@ function createListCard(list) {
   drag.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
   const title = document.createElement('h3');
-  title.className = 'text-[15px] font-medium text-ink truncate outline-none focus:bg-raised rounded px-1 -mx-1';
-  title.title = 'Double-click to rename. Enter to save.';
-  title.contentEditable = 'false';
-  title.addEventListener('dblclick', () => {
-    title.contentEditable = 'true';
-    title.focus();
-    document.execCommand('selectAll', false, null);
-  });
-  title.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); title.blur(); }
-    if (e.key === 'Escape') { title.contentEditable = 'false'; title.blur(); }
-  });
-  title.addEventListener('blur', () => {
-    if (title.isContentEditable) {
-      title.contentEditable = 'false';
-      renameList(id, title.textContent || '');
-    }
-  });
+  title.className = 'text-[15px] font-medium text-ink truncate';
 
   const textCol = document.createElement('div');
   textCol.className = 'flex flex-col min-w-0 flex-1 py-1';
@@ -511,7 +490,7 @@ function createListCard(list) {
   actions.append(openBtn, shareBtnNode, deleteBtn);
 
   card.onclick = (e) => {
-    if (!e.target.closest('button') && !e.target.closest('h3') && !e.target.closest('.drag')) {
+    if (!e.target.closest('button') && !e.target.closest('.drag')) {
       openList(id);
     }
   };
@@ -530,9 +509,8 @@ function updateListCard(card, list) {
   drag.classList.toggle('hidden', !draggable);
   drag.tabIndex = draggable ? 0 : -1;
 
-  // Leave the heading alone while it is being edited, or the caret jumps.
   const name = list.name || (list.loaded ? 'Untitled list' : '…');
-  if (!title.isContentEditable && title.textContent !== name) title.textContent = name;
+  if (title.textContent !== name) title.textContent = name;
 
   const count = plural(list.itemCount, 'item');
   if (countEl.textContent !== count) countEl.textContent = count;
@@ -635,6 +613,10 @@ function createItemRow(item) {
   // Sync per keystroke rather than on blur: the store narrows it to the characters
   // that actually changed, which is what lets two people type in the same row.
   text.addEventListener('input', () => editItem(id, text.value));
+  // Truncation keeps rows to one line, but it also hides the end of what you are
+  // editing. Drop it while the field is focused.
+  text.addEventListener('focus', () => text.classList.remove('truncate'));
+  text.addEventListener('blur', () => text.classList.add('truncate'));
   text.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
