@@ -51,10 +51,19 @@ const browser = await chromium.launch(
 );
 
 // Anything thrown on the page is a failure in its own right: the app is expected to
-// survive with no network, so an unhandled rejection is never "just the sandbox".
-// The signalling socket is the one thing that genuinely cannot connect from here.
+// survive with no network, so an unhandled rejection is never "just the environment".
 const pageErrors = [];
-const OFFLINE_NOISE = /WebSocket|ERR_TUNNEL|ERR_NAME|Failed to load resource|net::/;
+const OFFLINE_NOISE = /WebSocket|ERR_TUNNEL|ERR_NAME|ERR_FAILED|Failed to load resource|net::/;
+
+// Every request that tried to leave the bundle, and none of them are allowed out.
+//
+// The run has to mean the same thing on a laptop with wifi as on a CI runner, so the
+// network is cut here rather than left to the environment — otherwise the estimate
+// reaches the real Worker from CI, spends the account's search credits on every
+// push, and fails on CORS besides, because this server's port is not one the Worker
+// allows. Cutting it is also what makes the check below an assertion rather than an
+// accident: the app claims to start with nothing fetched, and this proves it.
+const blocked = [];
 
 async function openPage(context) {
   const page = await context.newPage();
@@ -62,6 +71,17 @@ async function openPage(context) {
   page.on('console', (m) => {
     if (m.type() === 'error' && !OFFLINE_NOISE.test(m.text())) pageErrors.push(m.text());
   });
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith(BASE) || url.startsWith('data:') || url.startsWith('blob:')) {
+      return route.continue();
+    }
+    blocked.push(url);
+    return route.abort();
+  });
+  // Sockets do not go through page.route, and y-webrtc opens one on startup. Handling
+  // it without connecting upstream is what keeps CI off the real signalling server.
+  await page.routeWebSocket(/.*/, () => {});
   // Neither dialog can be answered in a headless run, and both gate real behaviour
   // (delete, purge, the profile name), so they are answered from the test instead.
   await page.addInitScript(() => {
@@ -93,6 +113,9 @@ await settle(1200);
 
 /* ---------- it starts ---------- */
 check('home shows the empty state', (await page.textContent('#listsGrid')).includes('Nothing here yet'));
+// Nothing in assets/www may be fetched at runtime — fonts, styles and the sync
+// vendor bundle are all committed precisely so the app opens with no network.
+check('the app starts without fetching anything', blocked.length === 0, blocked.join(' | '));
 // The shell serves the bundle off disk already; a cache in front of it would serve
 // the previous build after an app update, so sw.js must stay unregistered here.
 check('no service worker on localhost',
@@ -308,9 +331,9 @@ await settle(600);
 check('Clear all empties the list', (await rows('#list')) === 0, `${await rows('#list')} rows`);
 
 /* ---------- the cost estimate ---------- */
-// Nothing here has network, so what is being checked is that the failure is a
-// sentence rather than a stuck button — the same path a user gets when the Worker
-// is down or the shop returns nothing.
+// The one thing that may leave the device, and only on this button. With the network
+// cut above, what is checked is that the failure is a sentence rather than a stuck
+// button — the same path a user gets when the Worker is down.
 await page.click('#estimateBtn');
 await settle(600);
 check('an empty list says there is nothing to price',
@@ -326,6 +349,9 @@ const estimate = (await page.textContent('#estimateSummary')).trim();
 check('an unreachable price service reports itself in words',
   estimate.length > 0 && !/undefined|NaN|\[object/.test(estimate), estimate);
 check('the Estimate button is usable again afterwards', !(await page.isDisabled('#estimateBtn')));
+// Pressing it is the only thing that should ever have tried to leave.
+check('only the estimate reached for the network',
+  blocked.length > 0 && blocked.every((u) => u.includes('workers.dev')), blocked.join(' | '));
 
 /* ---------- a share link, followed on another device ---------- */
 const other = await browser.newContext({ viewport: { width: 420, height: 900 } });
