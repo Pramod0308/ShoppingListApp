@@ -18,6 +18,7 @@
 
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { STORES } from '../assets/www/pricing.js';
 
 const PORT = Number(process.env.E2E_PORT || 5199);
 const BASE = `http://localhost:${PORT}/`;
@@ -73,6 +74,10 @@ const OFFLINE_NOISE = /WebSocket|ERR_TUNNEL|ERR_NAME|ERR_FAILED|Failed to load r
 // accident: the app claims to start with nothing fetched, and this proves it.
 const blocked = [];
 
+// Set to a (store, items) => payload function to answer the price Worker from a
+// fixture; null leaves it blocked, which is the offline path the app must survive.
+let priceFixture = null;
+
 async function openPage(context) {
   const page = await context.newPage();
   page.on('pageerror', (e) => pageErrors.push(String(e.message)));
@@ -85,6 +90,18 @@ async function openPage(context) {
       return route.continue();
     }
     blocked.push(url);
+    // The comparison matrix needs four shops' answers to have anything to compare,
+    // and the real Worker can neither be reached from CI nor spent on every push.
+    // When a fixture is armed the Worker is answered from it — still without a
+    // packet leaving the browser — so the matrix is tested against known numbers.
+    if (priceFixture && /workers\.dev/.test(url)) {
+      const body = JSON.parse(route.request().postData() ?? '{}');
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(priceFixture(body.store, body.items ?? [])),
+      });
+    }
     return route.abort();
   });
   // Sockets do not go through page.route, and y-webrtc opens one on startup. Handling
@@ -464,6 +481,104 @@ check('the Estimate button is usable again afterwards', !(await page.isDisabled(
 // Pressing it is the only thing that should ever have tried to leave.
 check('only the estimate reached for the network',
   blocked.length > 0 && blocked.every((u) => u.includes('workers.dev')), blocked.join(' | '));
+check('no matrix when nothing could be priced', !(await page.isVisible('#priceMatrix')));
+
+/* ---------- the comparison matrix ---------- */
+// Known prices per shop, so the cheapest cell and the cheapest basket are facts
+// rather than whatever the live API happens to say today. Aldi deliberately stocks
+// nothing — the case that would otherwise "win" every comparison on £0.00.
+const PRICES = {
+  asda:       { Milk: 0.95, Bread: 1.40, Eggs: 2.60 },
+  aldi:       {},
+  morrisons:  { Milk: 0.90, Bread: 1.60, Eggs: 2.80 },
+  sainsburys: { Milk: 1.10, Bread: 1.30, Eggs: 2.50 },
+};
+priceFixture = (store, items) => ({
+  results: items.map((q) => {
+    const price = PRICES[store]?.[q];
+    return price === undefined
+      ? { query: q, unavailable: true }
+      : { query: q, price, title: `${store} ${q}`, source: `${store}.co.uk`, link: `https://example.test/${store}/${q}` };
+  }),
+});
+
+// A fresh list, so the 7-day cache from the failed run above cannot answer for it.
+await page.click('#backHome');
+await settle(600);
+await page.fill('#newListName', 'Compare');
+await page.press('#newListName', 'Enter');
+await settle(700);
+await page.evaluate(() => {
+  const ta = document.getElementById('itemInput');
+  ta.value = 'Milk\nBread\nEggs';
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await page.click('#addBtn');
+await settle(500);
+await page.click('#estimateBtn');
+await settle(3000);
+
+check('the matrix appears', await page.isVisible('#priceMatrix'));
+check('it has a column per shop',
+  (await page.$$eval('#matrixHead th', (h) => h.length)) === STORES.length + 1,
+  `${await page.$$eval('#matrixHead th', (h) => h.length)} headers`);
+check('and a row per item',
+  (await page.$$eval('#matrixBody tr', (r) => r.length)) === 3,
+  `${await page.$$eval('#matrixBody tr', (r) => r.length)} rows`);
+
+// Every price is a link to that shop's own search for the matched product.
+const links = await page.$$eval('#matrixBody a', (a) => a.map((x) => x.href));
+check('every price is a link', links.length === 9, `${links.length} links for 9 prices`);
+check('the links point at the shops, not at one shop',
+  new Set(links.map((l) => new URL(l).host)).size >= 3,
+  [...new Set(links.map((l) => new URL(l).host))].join(', '));
+check('a shop that stocks nothing shows n/a rather than a price',
+  (await page.$$eval('#matrixBody td', (t) => t.filter((x) => x.textContent.trim() === 'n/a').length)) === 3);
+
+// The cheapest cell in each row, which is the point of the whole table.
+const cheapest = await page.$$eval('#matrixBody tr', (trs) =>
+  trs.map((tr) => {
+    const cells = [...tr.querySelectorAll('td')];
+    const i = cells.findIndex((c) => c.className.includes('bg-accent-soft'));
+    return `${tr.querySelector('th').textContent}:${i}`;
+  }));
+// Columns are ASDA, Aldi, Morrisons, Sainsbury's — so 2, 3 and 3.
+check('the cheapest shop is highlighted per row',
+  cheapest.join(' ') === 'Milk:2 Bread:3 Eggs:3', cheapest.join(' '));
+
+// Totals: ASDA 4.95, Aldi nothing, Morrisons 5.30, Sainsbury's 4.90.
+const totals = await page.$$eval('#matrixFoot tr:first-child td', (t) => t.map((x) => x.textContent.trim()));
+check('each shop gets a total', totals.join(' ') === '£4.95 — £5.30 £4.90', totals.join(' '));
+const bestCol = await page.$$eval('#matrixFoot tr:first-child td',
+  (t) => t.findIndex((x) => x.className.includes('bg-accent-soft')));
+check('the cheapest total is highlighted', bestCol === 3, `column ${bestCol}`);
+check('the empty shop does not win on nothing',
+  (await page.textContent('#estimateSummary')).includes("Sainsbury's"),
+  await page.textContent('#estimateSummary'));
+check('the summary names the saving',
+  /£0\.4\d less than Morrisons/.test(await page.textContent('#estimateSummary')),
+  await page.textContent('#estimateSummary'));
+check('coverage is stated under the totals',
+  (await page.$$eval('#matrixFoot tr:last-child td', (t) => t.map((x) => x.textContent.trim()))).join(' ')
+    === 'of 3 items 3 0 3 3',
+  (await page.$$eval('#matrixFoot tr:last-child td', (t) => t.map((x) => x.textContent.trim()))).join(' '));
+
+// Switching shop re-reads what was already fetched rather than asking again.
+const beforeSwitch = blocked.length;
+await page.selectOption('#storeSelect', 'morrisons');
+await settle(600);
+check('switching shop costs no further lookups', blocked.length === beforeSwitch,
+  `${blocked.length - beforeSwitch} extra`);
+check('and the rows now show that shop',
+  (await page.textContent('#list')).includes('£0.90'), 'expected Morrisons milk at £0.90');
+
+// The matrix is about the open list, so it must not follow you to another one.
+await page.click('#backHome');
+await settle(600);
+await page.click('#listsGrid .card-list:first-child');
+await settle(700);
+check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
+priceFixture = null;
 
 /* ---------- a share link, followed on another device ---------- */
 const other = await browser.newContext({ viewport: { width: 420, height: 900 } });
@@ -480,9 +595,12 @@ await other.close();
 await page.click('#backHome');
 await settle(600);
 await page.evaluate(() => { window.__confirmReply = true; });
+const cardsBefore = (await page.$$('#listsGrid .card-list')).length;
 await page.click(`#listsGrid .card-list:last-child ${DELETE_LIST}`);
 await settle(800);
-check('deleting a list removes its card', (await page.$$('#listsGrid .card-list')).length === 1);
+check('deleting a list removes its card',
+  (await page.$$('#listsGrid .card-list')).length === cardsBefore - 1,
+  `${cardsBefore} -> ${(await page.$$('#listsGrid .card-list')).length}`);
 
 await page.click('#listsGrid .card-list');
 await settle(600);

@@ -2,7 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
-import { STORES, isConfigured, priceItems, formatMoney, sourceName, productUrl } from "./pricing.js";
+import { STORES, isConfigured, priceAllStores, compareStores, cheapestFor, formatMoney, sourceName, productUrl } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -78,6 +78,10 @@ const purgeDeletedBtn   = document.getElementById('purgeDeleted');
 const storeSelectEl     = document.getElementById('storeSelect');
 const estimateBtn       = document.getElementById('estimateBtn');
 const estimateSummary   = document.getElementById('estimateSummary');
+const matrixEl          = document.getElementById('priceMatrix');
+const matrixHeadEl      = document.getElementById('matrixHead');
+const matrixBodyEl      = document.getElementById('matrixBody');
+const matrixFootEl      = document.getElementById('matrixFoot');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -250,6 +254,9 @@ function editProfile() {
    conflicts and noise for no benefit. Results are held for the current render only.
    ============================================================ */
 let prices = new Map();
+// store id -> (item id -> result), for every shop at once. The matrix reads this;
+// `prices` stays as the selected shop's column, which is what the rows show.
+let priceMatrix = new Map();
 
 if (storeSelectEl) {
   storeSelectEl.innerHTML = STORES
@@ -258,10 +265,11 @@ if (storeSelectEl) {
   storeSelectEl.value = localStorage.getItem('store') || STORES[0].id;
   storeSelectEl.onchange = () => {
     localStorage.setItem('store', storeSelectEl.value);
-    // Prices belong to the store they were fetched for.
-    prices = new Map();
-    setSummary('');
+    // Every shop was fetched together, so switching is a lookup rather than a
+    // reason to throw the prices away and ask again.
+    prices = priceMatrix.get(storeSelectEl.value) ?? new Map();
     renderItems();
+    renderMatrix();
   };
 }
 
@@ -280,52 +288,189 @@ async function estimateCost() {
     return;
   }
 
-  // Named storeId, not store: `store` is the document store this module already uses.
-  const storeId = storeSelectEl.value;
-  const label = STORES.find((s) => s.id === storeId)?.label ?? storeId;
   const target = listId ? shoppableItems() : [];
   if (target.length === 0) {
     setSummary('Nothing to price yet.');
+    renderMatrix();
     return;
   }
 
   estimateBtn.disabled = true;
-  setSummary(`Checking ${label}…`);
+  setSummary('Checking every shop…');
   try {
-    prices = await priceItems(target, storeId);
+    priceMatrix = await priceAllStores(target);
   } finally {
     estimateBtn.disabled = false;
   }
+  // Named storeId, not store: `store` is the document store this module already uses.
+  const storeId = storeSelectEl.value;
+  prices = priceMatrix.get(storeId) ?? new Map();
+  matrixItems = target;
   renderItems();
+  renderMatrix();
 
-  let total = 0;
-  let priced = 0;
-  let missing = 0;
-  let failed = 0;
-  for (const item of target) {
-    const result = prices.get(item.id);
-    if (!result) continue;
-    if (result.error) failed++;
-    else if (result.unavailable) missing++;
-    else { total += result.price; priced++; }
-  }
+  const { rows, best, complete } = compareStores(target, priceMatrix);
+  const winner = rows.find((r) => r.store === best);
 
-  if (priced === 0 && failed > 0) {
-    setSummary(`Could not get prices from ${sourceName() ?? 'anywhere'} (${plural(failed, 'item')}).`, 'danger');
+  if (!winner) {
+    const anyFailed = rows.some((r) => r.failed > 0);
+    setSummary(
+      anyFailed
+        ? `Could not get prices from ${sourceName() ?? 'anywhere'}.`
+        : 'None of these are listed at any of the shops.',
+      anyFailed ? 'danger' : 'muted',
+    );
     return;
   }
 
-  // "About £0.00 for 0 items" is technically true and reads like a fault. When a
-  // shop lists none of it, say that instead of totalling nothing.
-  if (priced === 0 && missing > 0) {
-    setSummary(`None of these are listed at ${label}.`);
-    return;
+  // The headline is the comparison, since that is what the matrix is for. Saying
+  // how many items a total covers matters when no shop stocks the lot — otherwise
+  // "cheapest" would be comparing baskets that are not the same basket.
+  const parts = [
+    complete
+      ? `Cheapest at ${winner.label}: ${formatMoney(winner.total)} for all ${plural(winner.priced, 'item')}`
+      : `Best is ${winner.label}: ${formatMoney(winner.total)} for the ${plural(winner.priced, 'item')} it stocks`,
+  ];
+  const others = rows.filter((r) => r.store !== best && r.priced === winner.priced);
+  if (others.length) {
+    const dearest = others.reduce((a, b) => (b.total > a.total ? b : a));
+    const saving = dearest.total - winner.total;
+    if (saving > 0) parts.push(`${formatMoney(saving)} less than ${dearest.label}`);
   }
-
-  const parts = [`About ${formatMoney(total)} at ${label} for ${plural(priced, 'item')}`];
-  if (missing) parts.push(`${missing} not stocked there`);
-  if (failed) parts.push(`${failed} could not be checked`);
   setSummary(parts.join(' · '));
+}
+
+/* ---------- The comparison matrix ---------- */
+// The rows the matrix is about, kept so a change of shop can redraw it without
+// asking what is on the list again.
+let matrixItems = [];
+
+function matrixCell(item, storeId, cheapest) {
+  const result = priceMatrix.get(storeId)?.get(item.id);
+  const td = document.createElement('td');
+  td.className = 'px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap border-t border-line';
+
+  if (!result || result.error) {
+    td.textContent = '—';
+    td.className += ' text-faint';
+    td.title = result?.error ? `Could not check: ${result.error}` : 'Not checked';
+    return td;
+  }
+  if (result.unavailable) {
+    td.textContent = 'n/a';
+    td.className += ' text-faint';
+    td.title = 'Not stocked here';
+    return td;
+  }
+
+  // Cheapest for this row: the one thing the matrix exists to show at a glance.
+  const isCheapest = cheapest && cheapest.store === storeId;
+  const href = productUrl(storeId, result);
+  const cell = document.createElement(href ? 'a' : 'span');
+  cell.textContent = formatMoney(result.price);
+  // Every price opens that shop's search for the matched product, so every price is
+  // marked as something you can tap. Hover is not a thing on a phone, so the
+  // underline is always on rather than appearing when a mouse arrives.
+  cell.className = 'underline decoration-dotted underline-offset-2 '
+    + (isCheapest ? 'font-semibold text-accent decoration-accent' : 'text-ink decoration-faint');
+  if (href) {
+    cell.href = href;
+    cell.target = '_blank';
+    cell.rel = 'noopener noreferrer';
+    cell.title = `${result.title} — open at ${STORES.find((s) => s.id === storeId)?.label ?? storeId}`;
+  } else {
+    cell.title = result.title ?? '';
+  }
+  td.appendChild(cell);
+  if (isCheapest) td.className += ' bg-accent-soft';
+  return td;
+}
+
+function renderMatrix() {
+  if (!matrixEl) return;
+  const items = priceMatrix.size ? matrixItems : [];
+  // A grid of dashes is not a comparison. When the lookup failed outright, or no
+  // shop stocks any of it, the summary line says so on its own and the table would
+  // only take up room repeating it.
+  const anyPriced = items.length > 0 && compareStores(items, priceMatrix).best !== null;
+  if (!anyPriced) {
+    matrixEl.classList.add('hidden');
+    return;
+  }
+  matrixEl.classList.remove('hidden');
+
+  matrixHeadEl.innerHTML = '';
+  const head = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.className = 'px-1.5 py-1.5 text-left font-medium text-faint sticky left-0 bg-surface z-10';
+  corner.scope = 'col';
+  corner.textContent = 'Item';
+  head.appendChild(corner);
+  for (const s of STORES) {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.className = 'px-1.5 py-1.5 text-right font-medium whitespace-nowrap '
+      + (s.id === storeSelectEl?.value ? 'text-ink' : 'text-faint');
+    th.textContent = s.label;
+    head.appendChild(th);
+  }
+  matrixHeadEl.appendChild(head);
+
+  matrixBodyEl.innerHTML = '';
+  for (const item of items) {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.scope = 'row';
+    th.className = 'px-1.5 py-1.5 text-left font-normal text-ink border-t border-line max-w-[5rem] truncate sticky left-0 bg-surface';
+    th.textContent = item.text;
+    th.title = item.text;
+    tr.appendChild(th);
+    const cheapest = cheapestFor(item.id, priceMatrix);
+    for (const s of STORES) tr.appendChild(matrixCell(item, s.id, cheapest));
+    matrixBodyEl.appendChild(tr);
+  }
+
+  const { rows, best } = compareStores(items, priceMatrix);
+  matrixFootEl.innerHTML = '';
+  const foot = document.createElement('tr');
+  const label = document.createElement('th');
+  label.scope = 'row';
+  label.className = 'px-1.5 py-1.5 text-left font-medium text-ink border-t-2 border-line sticky left-0 bg-surface';
+  label.textContent = 'Total';
+  foot.appendChild(label);
+  for (const row of rows) {
+    const td = document.createElement('td');
+    const isBest = row.store === best;
+    // A total over fewer items is not a rival basket, and £3.73 for three things
+    // reads as the winner next to £15.70 for five unless it is visibly dimmer.
+    const comparable = row.priced === items.length;
+    td.className = 'px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap border-t-2 border-line '
+      + (isBest ? 'bg-accent-soft font-semibold text-accent' : comparable ? 'text-ink' : 'text-faint');
+    // A total over fewer items is not the same basket, so it says how many.
+    td.textContent = row.priced ? formatMoney(row.total) : '—';
+    td.title = row.priced
+      ? `${row.label}: ${plural(row.priced, 'item')} priced`
+        + (row.missing ? `, ${row.missing} not stocked` : '')
+        + (row.failed ? `, ${row.failed} could not be checked` : '')
+      : `${row.label}: nothing priced`;
+    foot.appendChild(td);
+  }
+  matrixFootEl.appendChild(foot);
+
+  // Under the totals, how much of the list each one actually covers — without it,
+  // two totals of different baskets sit next to each other looking comparable.
+  const counts = document.createElement('tr');
+  const countLabel = document.createElement('td');
+  countLabel.className = 'px-1.5 pb-1.5 text-left text-[11px] text-faint sticky left-0 bg-surface';
+  countLabel.textContent = 'of ' + plural(items.length, 'item');
+  counts.appendChild(countLabel);
+  for (const row of rows) {
+    const td = document.createElement('td');
+    td.className = 'px-1.5 pb-1.5 text-right text-[11px] text-faint tabular-nums';
+    td.textContent = `${row.priced}`;
+    counts.appendChild(td);
+  }
+  matrixFootEl.appendChild(counts);
 }
 
 // Only things still to buy get priced; done and deleted rows are not shopping.
@@ -950,8 +1095,13 @@ function showListView() {
   if (homeSection) homeSection.classList.add('hidden');
   if (listView) listView.classList.remove('hidden');
   autoResizeTextarea(inputEl);
-  // Rows belong to whichever list is open, so start the view from scratch.
+  // Rows belong to whichever list is open, so start the view from scratch. The
+  // matrix goes with them: it is about this list's items, and leaving it up would
+  // show the previous list's prices against the new one's rows.
   prices = new Map();
+  priceMatrix = new Map();
+  matrixItems = [];
+  renderMatrix();
   setSummary('');
   itemRows.clear();
   doneRows.clear();
