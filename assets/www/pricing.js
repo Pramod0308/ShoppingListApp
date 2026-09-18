@@ -16,6 +16,7 @@ import { PRICE_API_URL } from './sync-config.js';
 export const STORES = [
   { id: 'asda', label: 'ASDA' },
   { id: 'aldi', label: 'Aldi' },
+  { id: 'lidl', label: 'Lidl' },
   { id: 'morrisons', label: 'Morrisons' },
   { id: 'sainsburys', label: "Sainsbury's" },
 ];
@@ -177,6 +178,11 @@ async function lookup(items, store) {
 // a Google results page rather than the item. These search the shop's own site for
 // the exact product the price came from, which on a phone opens that shop's app,
 // because the apps claim these links.
+//
+// Lidl is absent on purpose rather than guessed: its search URL could not be
+// checked from where this was written, and a link that 404s is worse than the
+// listing's own. productUrl falls back to that, so a Lidl price still opens
+// something. Add the builder here once the real URL has been confirmed.
 const STORE_SEARCH = {
   asda: (q) => `https://groceries.asda.com/search/${encodeURIComponent(q)}`,
   sainsburys: (q) => `https://www.sainsburys.co.uk/gol-ui/SearchResults/${encodeURIComponent(q)}`,

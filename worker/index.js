@@ -10,11 +10,24 @@
 // and a store from a fixed set, and returns prices. Nothing else about a list ever
 // reaches it, and it stores nothing.
 
+// How a listing is recognised as belonging to a shop. `names` are matched against
+// the seller Google displays; `domains` against the host the listing links to.
+//
+// The host is checked because the seller name is a display string and not reliably
+// the shop's own: a listing can read "Aldi UK", "Aldi Stores" or a marketplace's
+// name while linking to aldi.co.uk, and matching the name alone threw those away.
+// It is matched as a host suffix rather than a substring of the whole URL, so a
+// link that merely mentions a shop in a query parameter is not mistaken for that
+// shop's own listing.
 const STORES = {
-  asda: ['asda'],
-  aldi: ['aldi'],
-  morrisons: ['morrisons'],
-  sainsburys: ["sainsbury's", 'sainsburys', 'sainsbury'],
+  asda: { names: ['asda'], domains: ['asda.com', 'asda.co.uk'] },
+  aldi: { names: ['aldi'], domains: ['aldi.co.uk', 'aldi.com'] },
+  lidl: { names: ['lidl'], domains: ['lidl.co.uk', 'lidl.com'] },
+  morrisons: { names: ['morrisons'], domains: ['morrisons.com', 'morrisons.co.uk'] },
+  sainsburys: {
+    names: ["sainsbury's", 'sainsburys', 'sainsbury'],
+    domains: ['sainsburys.co.uk'],
+  },
 };
 
 // What to put in the query. A search engine reads "Sainsbury's" very differently
@@ -24,6 +37,7 @@ const STORES = {
 const STORE_LABELS = {
   asda: 'ASDA',
   aldi: 'Aldi',
+  lidl: 'Lidl',
   morrisons: 'Morrisons',
   sainsburys: 'Sainsburys',
 };
@@ -64,10 +78,23 @@ function parsePrice(raw) {
   return match ? Number(match[1]) : null;
 }
 
-function matchesStore(source, store) {
-  const needles = STORES[store] ?? [];
-  const haystack = (source || '').toLowerCase();
-  return needles.some((n) => haystack.includes(n));
+// A host belongs to a shop when it is that domain or a subdomain of it —
+// groceries.asda.com counts, notaldi.co.uk and aldi.co.uk.example.com do not.
+function hostMatches(link, domains) {
+  let host;
+  try {
+    host = new URL(link).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return domains.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+function matchesStore(result, store) {
+  const { names = [], domains = [] } = STORES[store] ?? {};
+  const seller = (result?.source || '').toLowerCase();
+  if (names.some((n) => seller.includes(n))) return true;
+  return typeof result?.link === 'string' && hostMatches(result.link, domains);
 }
 
 async function shoppingFor(q, apiKey) {
@@ -87,7 +114,7 @@ async function findListing(q, store, apiKey) {
   const results = Array.isArray(data.shopping) ? data.shopping : [];
   // The store filter is what produces the availability answer: no listing from that
   // seller means it is not sold there, which is a result rather than a failure.
-  const hit = results.find((r) => matchesStore(r.source, store) && parsePrice(r.price) !== null);
+  const hit = results.find((r) => matchesStore(r, store) && parsePrice(r.price) !== null);
   return { hit };
 }
 

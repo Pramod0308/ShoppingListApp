@@ -148,5 +148,77 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
   check('both passes were tried', calls === 2, `calls=${calls}`);
 }
 
+// 9. The seller name Google prints is a display string, not the shop's identity. A
+//    listing linking to the shop's own site counts even when the name does not say
+//    so — which is what used to throw away anything reading "Aldi Stores Ltd" or
+//    arriving through a marketplace.
+{
+  stubSerper([
+    { title: 'Everyday Essentials Milk', source: 'Aldi Stores Ltd', price: '£0.85',
+      link: 'https://groceries.aldi.co.uk/en-GB/p-milk/123' },
+  ]);
+  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  check('a seller name the filter does not know still matches on the link host',
+    body.results[0].price === 0.85, JSON.stringify(body.results[0]));
+}
+{
+  stubSerper([
+    { title: 'Milk', source: 'SomeMarketplace', price: '£0.85',
+      link: 'https://www.lidl.co.uk/p/milk/p12345' },
+  ]);
+  const body = await (await call({ store: 'lidl', items: ['milk'] })).json();
+  check('the host counts even when the seller name says nothing',
+    body.results[0].price === 0.85, JSON.stringify(body.results[0]));
+}
+{
+  stubSerper([
+    { title: 'Milk', source: 'ASDA', price: '£1.10',
+      link: 'https://groceries.asda.com/product/milk/456' },
+  ]);
+  const body = await (await call({ store: 'asda', items: ['milk'] })).json();
+  check('a subdomain of the shop matches', body.results[0].price === 1.10);
+}
+
+// 10. The host has to be the shop's own, not merely mention it. Matching the whole
+//     URL as a string would put a rival's price in Aldi's column.
+{
+  stubSerper([
+    { title: 'Milk', source: 'Ocado', price: '£1.99',
+      link: 'https://www.ocado.com/search?q=aldi.co.uk+milk' },
+  ]);
+  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  check('another shop mentioning aldi in a query string is not a match',
+    body.results[0].unavailable === true, JSON.stringify(body.results[0]));
+}
+{
+  stubSerper([
+    { title: 'Milk', source: 'Not It', price: '£1.99', link: 'https://notaldi.co.uk/milk' },
+  ]);
+  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  check('a lookalike domain is not a match',
+    body.results[0].unavailable === true, JSON.stringify(body.results[0]));
+}
+{
+  stubSerper([
+    { title: 'Milk', source: 'Nobody', price: '£1.99', link: 'not a url at all' },
+  ]);
+  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  check('an unparseable link is not a match rather than a crash',
+    body.results[0].unavailable === true, JSON.stringify(body.results[0]));
+}
+
+// 11. Lidl is served like any other shop, and an unknown one is still refused.
+{
+  stubSerper([{ title: 'Lidl Milk', source: 'Lidl', price: '£0.89', link: 'https://www.lidl.co.uk/p/1' }]);
+  const body = await (await call({ store: 'lidl', items: ['milk'] })).json();
+  check('lidl is a store the worker serves', body.results[0].price === 0.89, JSON.stringify(body.results[0]));
+}
+{
+  const res = await call({ store: 'tesco', items: ['milk'] });
+  check('an unknown store is still refused', res.status === 400);
+  check('and the error names lidl among the ones it serves',
+    (await res.json()).error.includes('lidl'));
+}
+
 console.log(failures === 0 ? 'pricing: all checks passed' : `pricing: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);
