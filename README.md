@@ -313,12 +313,24 @@ for (Sainsbury's needs one almost always, since naming it finds nothing at all).
 Three things keep that bearable, all in `assets/www/pricing.js`:
 
 - answers are cached per (item, shop) for 7 days, so looking at the same list again,
-  or switching which shop the rows show, costs nothing at all;
+  or switching which shop the rows show, costs nothing at all. **Refresh**, above the
+  table, asks every shop again and ignores that cache — without it a wrong or stale
+  answer has no way out but the developer tools, which is exactly what happened when
+  the store filter was fixed and every device that had estimated that week went on
+  being served the old matches. The cache key carries a version for the same reason:
+  bumping it orphans answers whose shape no longer matches what the worker returns;
 - the matrix itself is saved per list under `shopnest-matrix`, so leaving the list
   and coming back redraws the saved answer rather than buying it again — the ten most
   recent lists are kept, and a deleted list takes its estimate with it;
 - a product's own page is only looked up when someone actually taps a price, not for
   every cell of the table.
+
+All four shops are priced at once, and each one writing the cache back has to
+re-read it first: saving the copy taken when that shop started means the last to
+finish erases the other three, so an estimate pays for four shops and keeps one and
+the next look at the same list buys them all again. Nothing about that is visible —
+the prices on screen are right, they are simply not there next time —
+so `tools/compare.test.mjs` asserts every shop survives the others writing.
 
 Saved prices are kept out of the synced document deliberately. They are one person's
 lookup at one moment, and syncing them would push a stale estimate onto everyone

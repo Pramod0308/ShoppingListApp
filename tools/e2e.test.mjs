@@ -641,6 +641,24 @@ check('coverage is stated under the totals',
     === 'of 3 items 3 0 3 2',
   (await page.$$eval('#matrixFoot tr:last-child td', (t) => t.map((x) => x.textContent.trim()))).join(' '));
 
+// Refresh asks again. Prices are cached for a week, so a wrong or stale answer —
+// the shape the worker returns having changed under it, say — otherwise has no way
+// out of the cache but the developer tools.
+const beforeRefresh = blocked.filter((u) => /workers\.dev/.test(u)).length;
+await page.click('#matrixRefresh');
+await settle(3000);
+const afterRefresh = blocked.filter((u) => /workers\.dev/.test(u)).length;
+check('Refresh asks every shop again rather than re-reading the cache',
+  afterRefresh - beforeRefresh === STORES.length, `${afterRefresh - beforeRefresh} lookups`);
+check('and the table is still there afterwards', await page.isVisible('#priceMatrix'));
+
+// Estimate, by contrast, must stay cheap.
+const beforeEstimate = blocked.filter((u) => /workers\.dev/.test(u)).length;
+await page.click('#estimateBtn');
+await settle(1500);
+check('Estimate still answers from the cache', 
+  blocked.filter((u) => /workers\.dev/.test(u)).length === beforeEstimate);
+
 // Switching shop re-reads what was already fetched rather than asking again.
 const beforeSwitch = blocked.length;
 await page.selectOption('#storeSelect', 'tesco');

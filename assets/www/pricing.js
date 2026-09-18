@@ -26,7 +26,13 @@ export const STORES = [
   { id: 'tesco', label: 'Tesco' },
 ];
 
-const CACHE_KEY = 'shopnest-prices';
+// Versioned, and the version is part of the key rather than a field inside it.
+// A cached answer outlives a change to what the worker returns: when the store
+// filter was fixed to match the product and not just the shop, every device that
+// had estimated in the previous week went on being served the old wrong matches,
+// with no way to tell and nothing to press. Bumping this orphans them at once.
+const CACHE_KEY = 'shopnest-prices-v2';
+const LEGACY_CACHE_KEYS = ['shopnest-prices'];
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Resolved product pages, kept far longer than prices: a product's URL changes when
@@ -70,12 +76,22 @@ function writeStore(key, value) {
 const readCache = () => readStore(CACHE_KEY);
 const writeCache = (cache) => writeStore(CACHE_KEY, cache);
 
+// Superseded caches are dead weight in a storage quota shared with the lists
+// themselves, so they go rather than sit there until the browser is cleared.
+for (const key of LEGACY_CACHE_KEYS) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // No storage at all; there is nothing to clean up.
+  }
+}
+
 /// Prices a list of `{ id, text }`. Returns a Map of item id -> result, where a
 /// result is `{ price, title, source }`, `{ unavailable: true }` or `{ error }`.
 ///
 /// Cached answers cost nothing and work offline; only the misses are fetched, so
 /// re-estimating the same list makes no request at all.
-export async function priceItems(items, store) {
+export async function priceItems(items, store, { fresh = false } = {}) {
   const out = new Map();
   if (!isConfigured()) {
     for (const item of items) out.set(item.id, { error: 'Price lookup is not set up' });
@@ -87,7 +103,7 @@ export async function priceItems(items, store) {
   const misses = [];
 
   for (const item of items) {
-    const hit = cache[cacheKey(item.text, store)];
+    const hit = fresh ? null : cache[cacheKey(item.text, store)];
     if (hit && now - hit.at < TTL_MS) out.set(item.id, hit.result);
     else misses.push(item);
   }
@@ -112,13 +128,24 @@ export async function priceItems(items, store) {
   const byQuery = new Map();
   for (const result of payload.results ?? []) byQuery.set(normalise(result.query ?? ''), result);
 
+  const updates = [];
   for (const item of misses) {
     const result = byQuery.get(normalise(item.text)) ?? { error: 'No answer for this item' };
     out.set(item.id, result);
-    if (!result.error) cache[cacheKey(item.text, store)] = { at: now, result };
+    if (!result.error) updates.push([cacheKey(item.text, store), { at: now, result }]);
   }
 
-  writeCache(cache);
+  // Re-read before writing rather than saving the copy taken at the top. All four
+  // shops are priced at once, and each one writing back the snapshot it started with
+  // means the last to finish erases the other three — so every estimate was paying
+  // for four shops and keeping one, and re-estimating the same list bought them all
+  // again. There is no await between this read and the write, so nothing can
+  // interleave with it.
+  if (updates.length) {
+    const latest = readCache();
+    for (const [key, value] of updates) latest[key] = value;
+    writeCache(latest);
+  }
   return out;
 }
 
@@ -133,9 +160,9 @@ export async function priceItems(items, store) {
 /// a little more, because Sainsbury's needs a second query when naming the shop
 /// finds nothing. The per (item, shop) cache is what keeps that bearable: looking
 /// at the same list again inside a week is free.
-export async function priceAllStores(items) {
+export async function priceAllStores(items, { fresh = false } = {}) {
   const entries = await Promise.all(
-    STORES.map(async (s) => [s.id, await priceItems(items, s.id)]),
+    STORES.map(async (s) => [s.id, await priceItems(items, s.id, { fresh })]),
   );
   return new Map(entries);
 }
