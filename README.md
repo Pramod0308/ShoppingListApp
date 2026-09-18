@@ -49,8 +49,8 @@ from the URL on arrival, so the secret does not linger in history. Your name and
 colour ride along in the document, so shared lists show who made what — there is no
 account behind it.
 
-**Cost estimate.** Estimate prices what is still to buy at all five shops — ASDA,
-Aldi, Lidl, Morrisons and Sainsbury's — and lays them out as a matrix: a row per item, a
+**Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
+Morrisons, Sainsbury's and Tesco — and lays them out as a matrix: a row per item, a
 column per shop, the cheapest shop for each item picked out, and a row of totals with
 the cheapest basket picked out. Every price links to that shop's own search for the
 product it was matched to. Anything a shop does not stock reads `n/a`; anything that
@@ -261,14 +261,14 @@ npm run test:signalling
 - Only the most recent deletions are listed, so a row that falls off the end of that
   section can no longer be put back — Clear is still the only thing that removes one
   for good, but it stops being reachable before then.
-- **Aldi returns no prices**, and Lidl is expected to behave the same way: neither
-  sells groceries online in the UK, so Google Shopping carries next to no listings
-  for them and the lookup honestly reports "not stocked" rather than inventing a
-  number. Listings are now matched on the host they link to as well as the seller
-  name, which recovers any that are filed under a name the filter does not know —
-  but if there are no listings at all, nothing can recover them. `debug: true`
-  against the Worker shows what the search actually returns; see
-  [Cost estimate](#cost-estimate).
+- **The discounters cannot be priced at all**, and are no longer offered. Measured
+  against the live API: a search naming Aldi returned ten listings and not one was
+  Aldi's — Sainsbury's, Iceland, Ocado, Costco, Waitrose and four corner shops — and
+  a plain search found neither Aldi nor Lidl. Neither sells groceries online in the
+  UK, so Google Shopping has nothing of theirs to index, and no query or matching
+  rule can recover what is not there. Tesco took their place; the same measurement
+  found it three times over. `debug: true` against the Worker is how to re-check
+  that; see [Cost estimate](#cost-estimate).
   Reading the shops' own pages instead was tried and removed; that section has the
   detail.
 - Release signing is wired to repository secrets, so a tag build fails rather than
@@ -278,11 +278,11 @@ npm run test:signalling
 
 ## Cost estimate
 
-The list view prices what is on it at all five supermarkets (ASDA, Aldi, Lidl,
-Morrisons, Sainsbury's) at once and lays the answers out as a matrix, so the point
-of it is comparison rather than a single number.
+The list view prices what is on it at all four supermarkets (ASDA, Morrisons,
+Sainsbury's, Tesco) at once and lays the answers out as a matrix, so the point of
+it is comparison rather than a single number.
 
-**That costs about five times the credits of a single-shop estimate** — one request
+**That costs about four times the credits of a single-shop estimate** — one request
 per shop, and Sainsbury's needs a second query when naming the shop finds nothing.
 The per (item, shop) cache in `assets/www/pricing.js` is what makes it bearable:
 answers are held for 7 days, so looking at the same list again, or switching which

@@ -13,12 +13,17 @@
 
 import { PRICE_API_URL } from './sync-config.js';
 
+// Aldi and Lidl are deliberately absent. Measured against the live API: a search
+// naming Aldi returned ten listings, none of them Aldi's, and a plain search found
+// neither discounter — neither sells groceries online in the UK, so there is
+// nothing for Google Shopping to index. A column that can only say "not stocked"
+// still costs a query per item to say it, so they are gone and Tesco, which the
+// same measurement found three times over, is here instead.
 export const STORES = [
   { id: 'asda', label: 'ASDA' },
-  { id: 'aldi', label: 'Aldi' },
-  { id: 'lidl', label: 'Lidl' },
   { id: 'morrisons', label: 'Morrisons' },
   { id: 'sainsburys', label: "Sainsbury's" },
+  { id: 'tesco', label: 'Tesco' },
 ];
 
 const CACHE_KEY = 'shopnest-prices';
@@ -122,10 +127,11 @@ export async function priceAllStores(items) {
 /// Turns that matrix into per-shop totals and picks the one to beat.
 ///
 /// Summing whatever a shop happens to stock and calling the smallest number the
-/// winner is how a shop carrying none of your list wins with an empty basket —
-/// Aldi returns nothing at all, so it would win every comparison at £0.00. Coverage
-/// is therefore compared first and price only settles ties: the shops that priced
-/// the most items are the ones in the running, and the cheapest of those wins.
+/// winner is how a shop carrying none of your list wins with an empty basket at
+/// £0.00. That was Aldi's every answer while it was listed, and it remains one
+/// unstocked item away from mattering. Coverage is therefore compared first and
+/// price only settles ties: the shops that priced the most items are the ones in
+/// the running, and the cheapest of those wins.
 /// `complete` says whether that was the whole list, so the UI can qualify it.
 export function compareStores(items, byStore) {
   const rows = STORES.map((s) => {
@@ -179,15 +185,14 @@ async function lookup(items, store) {
 // the exact product the price came from, which on a phone opens that shop's app,
 // because the apps claim these links.
 //
-// Lidl is absent on purpose rather than guessed: its search URL could not be
-// checked from where this was written, and a link that 404s is worse than the
-// listing's own. productUrl falls back to that, so a Lidl price still opens
-// something. Add the builder here once the real URL has been confirmed.
+// Confirmed against the live API: every listing Serper returns links to
+// google.com/search, never to the shop, so without these a price would open a
+// search engine rather than the product.
 const STORE_SEARCH = {
   asda: (q) => `https://groceries.asda.com/search/${encodeURIComponent(q)}`,
   sainsburys: (q) => `https://www.sainsburys.co.uk/gol-ui/SearchResults/${encodeURIComponent(q)}`,
   morrisons: (q) => `https://groceries.morrisons.com/search?entry=${encodeURIComponent(q)}`,
-  aldi: (q) => `https://groceries.aldi.co.uk/en-GB/Search?keywords=${encodeURIComponent(q)}`,
+  tesco: (q) => `https://www.tesco.com/groceries/en-GB/search?query=${encodeURIComponent(q)}`,
 };
 
 /// The best link for a priced result: the shop's own search for the matched product,

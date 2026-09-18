@@ -57,7 +57,7 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
     { title: 'Tesco Sourdough', source: 'Tesco', price: '£2.00' },
     { title: 'Ocado Sourdough', source: 'Ocado', price: '£2.50' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['sourdough'] })).json();
+  const body = await (await call({ store: 'asda', items: ['sourdough'] })).json();
   const [first] = body.results;
 
   check('absent from the store is flagged, not errored', first.unavailable === true && !first.error);
@@ -74,16 +74,16 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
 // 4. A listing with an unparseable price must not count as a match.
 {
   stubSerper([
-    { title: 'Aldi Coffee', source: 'Aldi', price: 'See in store' },
-    { title: 'Aldi Coffee 227g', source: 'Aldi', price: '£3.29' },
+    { title: 'Tesco Coffee', source: 'Tesco', price: 'See in store' },
+    { title: 'Tesco Coffee 227g', source: 'Tesco', price: '£3.29' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['coffee'] })).json();
+  const body = await (await call({ store: 'tesco', items: ['coffee'] })).json();
   check('skips listings with no usable price', body.results[0].price === 3.29);
 }
 
 // 5. Input limits — this endpoint is public, so it must not be a free search API.
 {
-  const bad = await call({ store: 'tesco', items: ['x'] });
+  const bad = await call({ store: 'waitrose', items: ['x'] });
   check('rejects a store it does not serve', bad.status === 400);
 
   const many = await call({ store: 'asda', items: Array(41).fill('x') });
@@ -140,10 +140,10 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
   globalThis.fetch = async () => {
     calls++;
     return new Response(JSON.stringify({ shopping: [
-      { title: 'Tesco Milk', source: 'Tesco', price: '£1.20' },
+      { title: 'Ocado British Semi Skimmed Milk', source: 'Ocado', price: '£1.20' },
     ] }), { status: 200 });
   };
-  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
   check('absent after both passes is still unavailable', body.results[0].unavailable === true);
   check('both passes were tried', calls === 2, `calls=${calls}`);
 }
@@ -154,19 +154,19 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
 //    arriving through a marketplace.
 {
   stubSerper([
-    { title: 'Everyday Essentials Milk', source: 'Aldi Stores Ltd', price: '£0.85',
-      link: 'https://groceries.aldi.co.uk/en-GB/p-milk/123' },
+    { title: 'Tesco Semi Skimmed Milk', source: 'Tesco Stores Ltd', price: '£0.85',
+      link: 'https://www.tesco.com/groceries/en-GB/products/123' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
   check('a seller name the filter does not know still matches on the link host',
     body.results[0].price === 0.85, JSON.stringify(body.results[0]));
 }
 {
   stubSerper([
     { title: 'Milk', source: 'SomeMarketplace', price: '£0.85',
-      link: 'https://www.lidl.co.uk/p/milk/p12345' },
+      link: 'https://groceries.morrisons.com/products/milk-123' },
   ]);
-  const body = await (await call({ store: 'lidl', items: ['milk'] })).json();
+  const body = await (await call({ store: 'morrisons', items: ['milk'] })).json();
   check('the host counts even when the seller name says nothing',
     body.results[0].price === 0.85, JSON.stringify(body.results[0]));
 }
@@ -184,17 +184,17 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
 {
   stubSerper([
     { title: 'Milk', source: 'Ocado', price: '£1.99',
-      link: 'https://www.ocado.com/search?q=aldi.co.uk+milk' },
+      link: 'https://www.ocado.com/search?q=tesco.com+milk' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
-  check('another shop mentioning aldi in a query string is not a match',
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
+  check('another shop naming tesco in a query string is not a match',
     body.results[0].unavailable === true, JSON.stringify(body.results[0]));
 }
 {
   stubSerper([
-    { title: 'Milk', source: 'Not It', price: '£1.99', link: 'https://notaldi.co.uk/milk' },
+    { title: 'Milk', source: 'Not It', price: '£1.99', link: 'https://nottesco.com/milk' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
   check('a lookalike domain is not a match',
     body.results[0].unavailable === true, JSON.stringify(body.results[0]));
 }
@@ -202,22 +202,25 @@ const call = (body, env = { SERPER_API_KEY: 'test' }) =>
   stubSerper([
     { title: 'Milk', source: 'Nobody', price: '£1.99', link: 'not a url at all' },
   ]);
-  const body = await (await call({ store: 'aldi', items: ['milk'] })).json();
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
   check('an unparseable link is not a match rather than a crash',
     body.results[0].unavailable === true, JSON.stringify(body.results[0]));
 }
 
-// 11. Lidl is served like any other shop, and an unknown one is still refused.
+// 11. Tesco is served like any other shop; the discounters are not served at all,
+//     because the live API has no listings for either. Asking for one is refused
+//     rather than answered with a silent "not stocked".
 {
-  stubSerper([{ title: 'Lidl Milk', source: 'Lidl', price: '£0.89', link: 'https://www.lidl.co.uk/p/1' }]);
-  const body = await (await call({ store: 'lidl', items: ['milk'] })).json();
-  check('lidl is a store the worker serves', body.results[0].price === 0.89, JSON.stringify(body.results[0]));
+  stubSerper([{ title: 'Tesco Milk', source: 'Tesco', price: '£0.89',
+    link: 'https://www.tesco.com/groceries/en-GB/products/1' }]);
+  const body = await (await call({ store: 'tesco', items: ['milk'] })).json();
+  check('tesco is a store the worker serves', body.results[0].price === 0.89, JSON.stringify(body.results[0]));
 }
-{
-  const res = await call({ store: 'tesco', items: ['milk'] });
-  check('an unknown store is still refused', res.status === 400);
-  check('and the error names lidl among the ones it serves',
-    (await res.json()).error.includes('lidl'));
+for (const gone of ['aldi', 'lidl']) {
+  const res = await call({ store: gone, items: ['milk'] });
+  check(`${gone} is no longer served`, res.status === 400);
+  check(`and the error names the shops that are`,
+    (await res.json()).error.includes('tesco'));
 }
 
 console.log(failures === 0 ? 'pricing: all checks passed' : `pricing: ${failures} failures`);
