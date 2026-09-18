@@ -70,6 +70,16 @@
                     <!-- Cards will be injected here via app.js -->
                 </div>
             </section>
+
+            <!-- Lists set aside. Intact and still synced, just not in the way.
+                 Archiving is recorded per person, so filing one away here does
+                 nothing to the home screen of anyone it is shared with. -->
+            <section id="archivedSection" class="hidden mt-6">
+                <h2 class="text-[12px] font-medium uppercase tracking-wider text-faint mb-2 px-1">
+                    Archived · <span id="archivedCount">0</span>
+                </h2>
+                <div id="archivedGrid" class="flex flex-col gap-1.5"></div>
+            </section>
         </main>
     </div>
 

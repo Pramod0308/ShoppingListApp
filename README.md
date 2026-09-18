@@ -28,6 +28,12 @@ carries its item count and how long ago it changed. The header toggles between y
 own order and most-recently-updated; the drag handle is taken out of reach in the
 latter, because a manual order you cannot see is not one worth writing.
 
+A list you are done with for now can be archived instead of deleted: it drops off
+the home screen into an Archived section, stays intact and synced, still opens, and
+comes back where it was. That is recorded against your own index rather than in the
+list, so archiving something you share with a flatmate does nothing to their home
+screen.
+
 **Items.** Add one at a time, or paste a block and get a row per line. Enter inside a
 row opens the next one, so a list can be written without going back to the composer.
 Rows are edited in place and sync per keystroke, so two people can type in the same
@@ -115,9 +121,11 @@ symptom when they go subtly wrong. [Testing](#testing) has the rest.
 ### Sync and sharing
 
 Each list is its own document with its own secret, and therefore its own WebRTC
-room. An index document — one per user — records each list's id, secret and
-position, and syncs in a room derived from the device secret. That split is what
-makes the two link types mean different things:
+room. An index document — one per user — records each list's id, secret, position
+and whether it is archived, and syncs in a room derived from the device secret. That
+split is what makes the two link types mean different things, and it is also why
+archiving follows you between your own devices without reaching anyone you shared a
+list with:
 
 | Link | Carries | Built from |
 | --- | --- | --- |
@@ -241,10 +249,12 @@ npm run test:signalling
 
 ## Known gaps
 
-- There is no archive. Deleted items can be put back one at a time, but there is no
-  way to set a whole list aside without deleting it. The Archive and Settings tabs
-  that used to sit in the bottom navigation were removed because nothing was behind
-  them; the mockups for them are in `design/mockups/`.
+- There is no Settings screen. The Archive and Settings tabs that used to sit in the
+  bottom navigation were removed because nothing was behind them; archiving now
+  lives in a section on the home screen rather than behind a tab, and the mockups
+  for both are still in `design/mockups/`.
+- Deleting a list is permanent and immediate — there is no undo for it the way there
+  is for an item. Archiving is the reversible option.
 - Only the most recent deletions are listed, so a row that falls off the end of that
   section can no longer be put back — Clear is still the only thing that removes one
   for good, but it stops being reachable before then.

@@ -243,5 +243,40 @@ function seedOneItem(text = 'milk') {
   check('neither device loses the item', item(a) !== undefined && item(b) !== undefined);
 }
 
+// 11. Archiving is a field on the index entry, so it converges the same way — and
+//     the two devices holding an index are the same person's phone and laptop,
+//     which is exactly the case that has to agree. It carries no list content, so
+//     what matters is that a concurrent rename on the list itself is untouched by
+//     it: the two live in different documents on purpose.
+{
+  const entry = (doc, id = 'list-1') => doc.getMap('lists').get(id);
+  const [a, b] = pair((doc) => {
+    const map = new Y.Map();
+    doc.getMap('lists').set('list-1', map);
+    map.set('id', 'list-1');
+    map.set('secret', 'sssh');
+    map.set('order', 'a1');
+  });
+
+  entry(a).set('archived_at', '2026-09-18T00:00:00.000Z');
+  sync(a, b);
+  check('an archive reaches the other device',
+    entry(b).get('archived_at') === '2026-09-18T00:00:00.000Z');
+
+  // One device files it away again while the other takes it back out.
+  entry(a).set('archived_at', null);
+  entry(b).set('archived_at', '2026-09-18T00:00:05.000Z');
+  sync(a, b);
+  check('an unarchive racing an archive converges',
+    (entry(a).get('archived_at') ?? null) === (entry(b).get('archived_at') ?? null),
+    `${entry(a).get('archived_at')} vs ${entry(b).get('archived_at')}`);
+  check('neither device loses the list entry',
+    entry(a) !== undefined && entry(b) !== undefined);
+  // Archiving must not disturb where the list sorts, or unarchiving would drop it
+  // somewhere new rather than back where it was.
+  check('archiving leaves the order key alone',
+    entry(a).get('order') === 'a1' && entry(b).get('order') === 'a1');
+}
+
 console.log(failures === 0 ? 'doc-model: all checks passed' : `doc-model: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

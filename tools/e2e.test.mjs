@@ -116,6 +116,12 @@ const reload = async () => {
 // is deleted — so clicking "the button" would wait on the wrong element forever.
 const DELETE_ITEM = 'button[aria-label="Delete this item"]';
 const RESTORE_ITEM = 'button[aria-label="Put this item back on the list"]';
+// Same for a list card: nth-of-type broke the moment the archive buttons landed
+// between share and delete, so these are addressed by label too.
+const SHARE_LIST = 'button[aria-label="Share this list"]';
+const ARCHIVE_LIST = 'button[aria-label="Archive this list"]';
+const UNARCHIVE_LIST = 'button[aria-label="Put this list back on the home screen"]';
+const DELETE_LIST = 'button[aria-label="Delete this list"]';
 
 const clipboard = () => page.evaluate(async () => {
   try { return await navigator.clipboard.readText(); } catch { return ''; }
@@ -316,7 +322,7 @@ check('the rename shows on the card', (await page.textContent('#listsGrid')).inc
 check('the card counts the items', /\d+ items?/.test(await page.textContent('#listsGrid')));
 
 /* ---------- the two kinds of link ---------- */
-await page.click('#listsGrid .card-list .actions button:nth-of-type(2)');
+await page.click(`#listsGrid .card-list ${SHARE_LIST}`);
 await settle(600);
 const shareUrl = await clipboard();
 check('Share copies a ?join= link for one list', /\?join=[^~%]+(~|%7E)/i.test(shareUrl), shareUrl);
@@ -367,6 +373,56 @@ await page.keyboard.press('Space');
 await settle(700);
 const listsAfter = await page.$$eval('#listsGrid .card-list h3', (h) => h.map((e) => e.textContent));
 check('lists can be reordered too', listsBefore[0] === listsAfter[1], `${listsBefore} -> ${listsAfter}`);
+
+/* ---------- setting one aside ---------- */
+// The Archived section only appears once something is in it.
+check('no Archived section until there is one', !(await page.isVisible('#archivedSection')));
+
+const archivedName = (await page.$$eval('#listsGrid .card-list h3', (h) => h.map((e) => e.textContent)))[0];
+await page.click(`#listsGrid .card-list:first-child ${ARCHIVE_LIST}`);
+await settle(700);
+check('archiving moves the card out of the home list',
+  (await page.$$('#listsGrid .card-list')).length === 1 &&
+  (await page.$$('#archivedGrid .card-list')).length === 1,
+  `home=${(await page.$$('#listsGrid .card-list')).length} archived=${(await page.$$('#archivedGrid .card-list')).length}`);
+check('the Archived heading appears', await page.isVisible('#archivedSection'));
+check('the archived count is right', (await page.textContent('#archivedCount')).trim() === '1');
+check('the archived card is the one archived',
+  (await page.textContent('#archivedGrid')).includes(archivedName), archivedName);
+// The list is set aside, not deleted: it is intact and still opens.
+check('an archived list still offers to open and share',
+  await page.isVisible(`#archivedGrid .card-list ${SHARE_LIST}`));
+// Reorder is wired to the home grid only, so a handle here would do nothing.
+check('an archived card has no drag handle',
+  await page.evaluate(() => document.querySelector('#archivedGrid .card-list .drag')
+    ?.classList.contains('hidden') === true));
+check('an archived card offers to come back',
+  await page.isVisible(`#archivedGrid .card-list ${UNARCHIVE_LIST}`));
+check('a home card does not', !(await page.isVisible(`#listsGrid .card-list ${UNARCHIVE_LIST}`)));
+
+await reload();
+check('the archive survives a reload',
+  (await page.$$('#archivedGrid .card-list')).length === 1 &&
+  (await page.$$('#listsGrid .card-list')).length === 1);
+
+// Opening an archived list works, and leaves it archived.
+await page.click('#archivedGrid .card-list');
+await settle(700);
+check('an archived list opens', await page.isVisible('#listView'));
+await page.click('#backHome');
+await settle(600);
+check('opening it does not unarchive it', (await page.$$('#archivedGrid .card-list')).length === 1);
+
+await page.click(`#archivedGrid .card-list ${UNARCHIVE_LIST}`);
+await settle(700);
+check('unarchiving puts it back on the home screen',
+  (await page.$$('#listsGrid .card-list')).length === 2 &&
+  (await page.$$('#archivedGrid .card-list')).length === 0);
+check('the Archived heading goes away when empty', !(await page.isVisible('#archivedSection')));
+// It keeps its order key while archived, so it returns to where it was.
+check('the unarchived list comes back in its old place',
+  (await page.$$eval('#listsGrid .card-list h3', (h) => h.map((e) => e.textContent)))[0] === archivedName,
+  `expected ${archivedName} first`);
 
 /* ---------- clearing ---------- */
 await page.click('#listsGrid .card-list:last-child');
@@ -424,7 +480,7 @@ await other.close();
 await page.click('#backHome');
 await settle(600);
 await page.evaluate(() => { window.__confirmReply = true; });
-await page.click('#listsGrid .card-list:last-child .actions button:nth-of-type(3)');
+await page.click(`#listsGrid .card-list:last-child ${DELETE_LIST}`);
 await settle(800);
 check('deleting a list removes its card', (await page.$$('#listsGrid .card-list')).length === 1);
 

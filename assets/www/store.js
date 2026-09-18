@@ -220,12 +220,19 @@ export class Store {
     this.#index.forEach((entry, id) => {
       if (!(entry instanceof Y.Map)) return;
       const handle = this.#lists.get(id);
+      // Archiving lives on the index entry, which is one per person, rather than in
+      // the list document, which everyone the list is shared with holds a copy of.
+      // Setting a list aside is a statement about your own home screen, not about
+      // theirs — the same reason `order` lives here.
+      const archivedAt = entry.get('archived_at') ?? null;
       out.push({
         id,
         order: entry.get('order') ?? '',
         name: handle ? handle.doc.getText('name').toString() : '',
         updatedAt: entry.get('updated_at') ?? '',
         itemCount: handle ? this.activeItems(id).length : 0,
+        archived: archivedAt !== null,
+        archivedAt,
         // Someone who joined by share link has an index entry they wrote
         // themselves, so the creator has to come from inside the list.
         createdBy: entry.get('created_by')
@@ -240,6 +247,19 @@ export class Store {
       return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : compare(a, b)));
     }
     return out.sort(compare);
+  }
+
+  /// The lists on the home screen. Archived ones are set aside, not gone.
+  activeLists(by = 'custom') {
+    return this.lists(by).filter((l) => !l.archived);
+  }
+
+  /// Archived lists, most recently set aside first — the order that section reads
+  /// in, and the same rule the deleted items section follows.
+  archivedLists() {
+    return this.lists()
+      .filter((l) => l.archived)
+      .sort((a, b) => (a.archivedAt < b.archivedAt ? 1 : a.archivedAt > b.archivedAt ? -1 : 0));
   }
 
   listName(id) {
@@ -321,6 +341,30 @@ export class Store {
     this.#index.delete(id);
     this.#closeList(id);
     indexedDB.deleteDatabase(LIST_DB(id));
+    this.#emit();
+  }
+
+  /// Sets a list aside without deleting it. The list itself is untouched — it stays
+  /// open, stays synced, and keeps its order key, so unarchiving puts it back where
+  /// it was rather than at the top.
+  ///
+  /// This writes to the index, so it follows you across your own devices and does
+  /// nothing to anyone you shared the list with. A weekly shop somebody else is
+  /// still using does not vanish from their home screen because you filed it away.
+  archiveList(id) {
+    const entry = this.#index.get(id);
+    if (!(entry instanceof Y.Map)) return;
+    entry.set('archived_at', nowIso());
+    this.#emit();
+  }
+
+  /// Null rather than a deleted key, for the same reason restoreItem writes one:
+  /// it keeps this an ordinary last-writer-wins on a single key instead of a race
+  /// between a set and a delete, and lists() already reads it with `?? null`.
+  unarchiveList(id) {
+    const entry = this.#index.get(id);
+    if (!(entry instanceof Y.Map)) return;
+    entry.set('archived_at', null);
     this.#emit();
   }
 
