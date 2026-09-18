@@ -419,6 +419,24 @@ export class Store {
     this.#touchIndex(listId);
   }
 
+  /// Undoes that. The row keeps its order key while it sits in the deleted
+  /// section, so it comes back where it was rather than at the end, and it keeps
+  /// its done flag, which is what makes this an undo for Clear done too.
+  ///
+  /// The key is set to null rather than deleted from the map. Two devices can
+  /// disagree about whether a row is deleted, and Yjs settles a set/delete race on
+  /// the map key itself; writing a value keeps the restore a plain last-writer-wins
+  /// on one key, which is the behaviour items() already reads with `?? null`.
+  restoreItem(listId, itemId) {
+    const item = this.#item(listId, itemId);
+    if (!item) return;
+    this.#lists.get(listId).doc.transact(() => {
+      item.set('deleted_at', null);
+      item.set('updated_at', nowIso());
+    });
+    this.#touchIndex(listId);
+  }
+
   purgeDeleted(listId) {
     const handle = this.#lists.get(listId);
     if (!handle) return;

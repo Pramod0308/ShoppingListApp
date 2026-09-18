@@ -202,5 +202,46 @@ function seedOneItem(text = 'milk') {
   check('concurrent deletes stay deleted', item(a).get('deleted_at') !== null);
 }
 
+// 9. Restoring writes null to that same field rather than removing the key, so it is
+//    an ordinary write on one key and converges like any other. Clearing the key
+//    instead would leave the outcome to how Yjs settles a set against a delete,
+//    which is a different and much less obvious rule to rely on.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  sync(a, b);
+
+  // One device puts it back while the other, still apart, edits the text.
+  item(a).set('deleted_at', null);
+  edit(b, item(b).get('text'), 'oat milk');
+  sync(a, b);
+
+  check('a restore converges', (item(b).get('deleted_at') ?? null) === null);
+  check('a restore keeps a concurrent edit', item(a).get('text').toString() === 'oat milk');
+
+  const active = (doc) =>
+    [...doc.getMap('items').values()].filter((m) => (m.get('deleted_at') ?? null) === null);
+  check('a restored item is active on both devices',
+    active(a).length === 1 && active(b).length === 1);
+}
+
+// 10. Restoring on one device while the other deletes again. Both are writes to the
+//     same key, so they cannot both stand — what matters is that the two devices
+//     agree on which won rather than one of them keeping a row the other has lost.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  sync(a, b);
+
+  item(a).set('deleted_at', null);
+  item(b).set('deleted_at', '2026-08-19T00:00:05.000Z');
+  sync(a, b);
+
+  check('a restore racing a delete converges',
+    (item(a).get('deleted_at') ?? null) === (item(b).get('deleted_at') ?? null),
+    `${item(a).get('deleted_at')} vs ${item(b).get('deleted_at')}`);
+  check('neither device loses the item', item(a) !== undefined && item(b) !== undefined);
+}
+
 console.log(failures === 0 ? 'doc-model: all checks passed' : `doc-model: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

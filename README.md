@@ -32,8 +32,9 @@ latter, because a manual order you cannot see is not one worth writing.
 row opens the next one, so a list can be written without going back to the composer.
 Rows are edited in place and sync per keystroke, so two people can type in the same
 row. Tick to move a row to Done; delete to move it to Deleted, which is a record
-rather than a bin — Clear is the only thing that removes it for good. Clear done and
-Clear all do the obvious thing to the sections above it.
+rather than a bin — anything there can be put back where it was, and Clear is the
+only thing that removes it for good. Clear done and Clear all do the obvious thing
+to the sections above it, and are undone the same way, one row at a time.
 
 **Sharing.** Two links, meaning two different things. Share on a list copies a
 `?join=` link that hands over that one list. Link device copies a `?link=` link that
@@ -240,10 +241,13 @@ npm run test:signalling
 
 ## Known gaps
 
-- There is no archive: deleting a list hides it in the Deleted section, and Clear
-  removes it for good. Nothing in the Deleted section can be restored. The Archive
-  and Settings tabs that used to sit in the bottom navigation were removed because
-  nothing was behind them; the mockups for them are in `design/mockups/`.
+- There is no archive. Deleted items can be put back one at a time, but there is no
+  way to set a whole list aside without deleting it. The Archive and Settings tabs
+  that used to sit in the bottom navigation were removed because nothing was behind
+  them; the mockups for them are in `design/mockups/`.
+- Only the most recent deletions are listed, so a row that falls off the end of that
+  section can no longer be put back — Clear is still the only thing that removes one
+  for good, but it stops being reachable before then.
 - **Aldi returns no prices** and reports every item as not stocked, which matches its
   barely selling groceries online in the UK. The other three work — see
   [Cost estimate](#cost-estimate) for how that was measured. Reading the shops' own

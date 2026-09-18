@@ -40,6 +40,14 @@ const server = spawn(process.execPath, [new URL('serve.mjs', import.meta.url).pa
   env: { ...process.env, PORT: String(PORT) },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
+// Registered before anything can throw, including the startup wait below: a failing
+// run used to leave the server behind holding the port, so the next run died with
+// EADDRINUSE — an error about the port rather than about the check that broke.
+process.on('exit', () => server.kill());
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => { server.kill(); process.exit(1); });
+}
+
 await new Promise((resolve, reject) => {
   server.stdout.once('data', resolve);
   server.once('error', reject);
@@ -104,6 +112,11 @@ const reload = async () => {
   await page.reload({ waitUntil: 'networkidle' });
   await settle(1200);
 };
+// A row has more than one button now, and the restore one is hidden until the row
+// is deleted — so clicking "the button" would wait on the wrong element forever.
+const DELETE_ITEM = 'button[aria-label="Delete this item"]';
+const RESTORE_ITEM = 'button[aria-label="Put this item back on the list"]';
+
 const clipboard = () => page.evaluate(async () => {
   try { return await navigator.clipboard.readText(); } catch { return ''; }
 });
@@ -172,11 +185,12 @@ check('the inserted row takes focus',
   (await page.evaluate(() => document.activeElement?.className || '')).includes('text'));
 
 // Clearing up the blank row is itself a soft delete, so purge before counting below.
-await page.evaluate(() => {
+// The selector is passed in: this body runs in the page, where it is not in scope.
+await page.evaluate((sel) => {
   const blank = [...document.querySelectorAll('#list li')]
     .find((r) => r.querySelector('input.text').value === '');
-  blank?.querySelector('button')?.click();
-});
+  blank?.querySelector(sel)?.click();
+}, DELETE_ITEM);
 await settle(400);
 await page.evaluate(() => { window.__confirmReply = true; });
 await page.click('#purgeDeleted');
@@ -197,20 +211,62 @@ check('unticking brings it back', (await rows('#list')) === 5);
 check('the Done heading goes away when empty', !(await page.isVisible('#doneSection')));
 
 /* ---------- deleting ---------- */
-await page.click('#list li:first-child button');
+const deletedText = await page.inputValue('#list li:first-child input.text');
+await page.click(`#list li:first-child ${DELETE_ITEM}`);
 await settle(500);
 check('deleting moves the row to Deleted',
   (await rows('#deletedList')) === 1 && (await rows('#list')) === 4,
   `deleted=${await rows('#deletedList')} active=${await rows('#list')}`);
 check('the Deleted heading appears', await page.isVisible('#deletedSection'));
-// A deleted row is a record, not a control.
+// A deleted row is a record, not a control — except for putting it back.
 check('a deleted row cannot be edited',
   await page.evaluate(() => document.querySelector('#deletedList li input.text').readOnly));
 
+/* ---------- putting one back ---------- */
+// Delete is one tap and asks nothing, so it has to be reversible to be honest.
+check('a deleted row offers to go back', await page.isVisible(`#deletedList li ${RESTORE_ITEM}`));
+check('an active row does not', !(await page.isVisible(`#list li:first-child ${RESTORE_ITEM}`)));
+
+const orderBeforeDelete = await texts('#list');
+await page.click(`#deletedList li:first-child ${RESTORE_ITEM}`);
+await settle(600);
+check('restoring returns the row to the list',
+  (await rows('#list')) === 5 && (await rows('#deletedList')) === 0,
+  `active=${await rows('#list')} deleted=${await rows('#deletedList')}`);
+check('the Deleted heading goes away when empty', !(await page.isVisible('#deletedSection')));
+// It keeps its order key while deleted, so it comes back where it was.
+check('the restored row comes back in its old place',
+  (await texts('#list'))[0] === deletedText,
+  `expected ${deletedText} first, got ${(await texts('#list'))[0]}`);
+check('the restored row is editable again',
+  await page.evaluate(() => document.querySelector('#list li:first-child input.text').readOnly === false));
+await reload();
+check('the restore survives a reload',
+  (await rows('#list')) === 5 && (await rows('#deletedList')) === 0);
+
+// Clear done and Clear all soft-delete too, so restore is their undo as well — and
+// a restored row keeps its done flag rather than coming back as outstanding.
+await page.click('#list li:first-child input[type=checkbox]');
+await settle(500);
+await page.click(`#doneList li:first-child ${DELETE_ITEM}`);
+await settle(500);
+await page.click(`#deletedList li:first-child ${RESTORE_ITEM}`);
+await settle(600);
+check('a restored row keeps its done flag',
+  (await rows('#doneList')) === 1 && (await rows('#list')) === 4,
+  `done=${await rows('#doneList')} active=${await rows('#list')}`);
+await page.click('#doneList li:first-child input[type=checkbox]');
+await settle(500);
+
+// Delete one again so the purge below has something to remove.
+await page.click(`#list li:first-child ${DELETE_ITEM}`);
+await settle(500);
 await page.evaluate(() => { window.__confirmReply = true; });
 await page.click('#purgeDeleted');
 await settle(500);
 check('Clear empties the Deleted section', (await rows('#deletedList')) === 0);
+check('and what Clear removed does not come back', (await rows('#list')) === 4,
+  `${await rows('#list')} rows`);
 
 /* ---------- the two header toggles ---------- */
 const metaShown = () => page.evaluate(() =>

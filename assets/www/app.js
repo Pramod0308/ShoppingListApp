@@ -656,6 +656,17 @@ function createItemRow(item) {
   del.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-danger hover:bg-danger-soft transition-colors';
   del.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">delete</span>';
   del.onclick = () => store.deleteItem(listId, id);
+  del.setAttribute('aria-label', 'Delete this item');
+
+  // Deleting is one tap and asks nothing, which is the right weight for something
+  // that only moves a row into a section below — but only while that move can be
+  // undone. This is the control that makes it true.
+  const restore = document.createElement('button');
+  restore.className = 'icon-btn hidden w-9 h-9 items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
+  restore.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">undo</span>';
+  restore.onclick = () => store.restoreItem(listId, id);
+  restore.setAttribute('aria-label', 'Put this item back on the list');
+  restore.title = 'Put back';
 
   const handle = document.createElement('div');
   handle.className = 'drag handle w-7 h-9 flex items-center justify-center rounded-md text-faint hover:text-muted transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-accent focus:outline-none';
@@ -663,16 +674,16 @@ function createItemRow(item) {
   handle.setAttribute('aria-label', 'Reorder item (Press Space to grab)');
   handle.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
-  actionsContainer.append(del, handle);
+  actionsContainer.append(restore, del, handle);
   rightContainer.append(mobileMeta, dot, price, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched };
+  li.refs = { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched } = li.refs;
+  const { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -685,6 +696,7 @@ function updateItemRow(li, item) {
 
   // A deleted row is a record, not a control. It loses the card chrome as well as
   // the controls, so it reads as history rather than as something still on the list.
+  // Putting it back is the one thing it can still do, and the only control it keeps.
   li.classList.toggle('row-press', !deleted);
   li.classList.toggle('bg-surface', !deleted);
   li.classList.toggle('border-line', !deleted);
@@ -695,6 +707,8 @@ function updateItemRow(li, item) {
   cb.disabled = deleted;
   label.classList.toggle('hidden', deleted);
   del.classList.toggle('hidden', deleted);
+  restore.classList.toggle('hidden', !deleted);
+  restore.classList.toggle('flex', deleted);
   // Reorder is only wired to the active section, so a handle anywhere else would be
   // a control that quietly does nothing.
   handle.classList.toggle('hidden', deleted || done);
