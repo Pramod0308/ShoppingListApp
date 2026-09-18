@@ -86,6 +86,7 @@ const matrixFootEl      = document.getElementById('matrixFoot');
 const matrixStatusEl    = document.getElementById('matrixStatus');
 const matrixStatusDot   = document.getElementById('matrixStatusDot');
 const matrixStatusText  = document.getElementById('matrixStatusText');
+const matrixRefreshBtn  = document.getElementById('matrixRefresh');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -285,7 +286,10 @@ function setSummary(text, tone = 'muted') {
   estimateSummary.classList.toggle('text-muted', tone !== 'danger');
 }
 
-async function estimateCost() {
+/// `fresh` skips the 7-day cache and asks every shop again. That costs a search per
+/// item per shop, so it is what the Refresh button does and not what pressing
+/// Estimate does.
+async function estimateCost({ fresh = false } = {}) {
   if (!isConfigured()) {
     // Neither source is available: no worker URL, and no shell to fall back on.
     setSummary('Price lookup is not set up — see PRICE_API_URL in sync-config.js.', 'danger');
@@ -300,11 +304,13 @@ async function estimateCost() {
   }
 
   estimateBtn.disabled = true;
-  setSummary('Checking every shop…');
+  if (matrixRefreshBtn) matrixRefreshBtn.disabled = true;
+  setSummary(fresh ? 'Asking every shop again…' : 'Checking every shop…');
   try {
-    priceMatrix = await priceAllStores(target);
+    priceMatrix = await priceAllStores(target, { fresh });
   } finally {
     estimateBtn.disabled = false;
+    if (matrixRefreshBtn) matrixRefreshBtn.disabled = false;
   }
   // Named storeId, not store: `store` is the document store this module already uses.
   const storeId = storeSelectEl.value;
@@ -1436,7 +1442,8 @@ if (backHomeBtn)        backHomeBtn.onclick = goHome;
 if (addBtn)             addBtn.onclick = addFromTextarea;
 if (clearAllBtn)        clearAllBtn.onclick = clearAll;
 if (clearCompletedBtn)  clearCompletedBtn.onclick = clearCompleted;
-if (estimateBtn)        estimateBtn.onclick = estimateCost;
+if (estimateBtn)        estimateBtn.onclick = () => estimateCost();
+if (matrixRefreshBtn)   matrixRefreshBtn.onclick = () => estimateCost({ fresh: true });
 if (purgeDeletedBtn)    purgeDeletedBtn.onclick = () => {
     if (confirm('Permanently remove the deleted items? They cannot be brought back.')) {
       store.purgeDeleted(listId);

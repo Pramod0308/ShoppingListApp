@@ -133,9 +133,16 @@
                     <!-- Whether these prices still describe the list. An estimate is a
                          photograph: add or rename an item and the table below is
                          answering a question nobody is asking any more. -->
-                    <div id="matrixStatus" class="flex items-center gap-1.5 px-2 py-1.5 text-[11px] leading-tight border-b border-line" aria-live="polite">
-                        <span id="matrixStatusDot" class="w-1.5 h-1.5 rounded-full shrink-0"></span>
-                        <span id="matrixStatusText" class="min-w-0"></span>
+                    <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-line">
+                        <div id="matrixStatus" class="flex items-center gap-1.5 min-w-0 flex-1 text-[11px] leading-tight" aria-live="polite">
+                            <span id="matrixStatusDot" class="w-1.5 h-1.5 rounded-full shrink-0"></span>
+                            <span id="matrixStatusText" class="min-w-0"></span>
+                        </div>
+                        <!-- Prices are cached for a week, so without this a wrong or
+                             out-of-date answer has no way out but the developer tools. -->
+                        <button id="matrixRefresh" class="shrink-0 px-1.5 py-0.5 rounded-md text-[11px] font-medium text-muted hover:text-ink hover:bg-raised transition-colors" title="Look these prices up again, ignoring the saved ones">
+                            Refresh
+                        </button>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full border-collapse text-[12px]">

@@ -10,7 +10,7 @@
 // the matrix still renders, it just points at the wrong shop.
 
 import { compareStores, cheapestFor, matrixFreshness, goneFromList,
-         saveMatrix, loadMatrix, forgetMatrix } from '../assets/www/pricing.js';
+         saveMatrix, loadMatrix, forgetMatrix, priceAllStores, STORES } from '../assets/www/pricing.js';
 
 let failures = 0;
 function check(label, ok, detail = '') {
@@ -224,6 +224,40 @@ globalThis.localStorage = {
   const kept = Object.keys(JSON.parse(backing.get('shopnest-matrix'))).length;
   check('saved estimates are capped', kept === 10, `kept=${kept}`);
   check('and the most recent are the ones kept', loadMatrix('bulk-13') !== null && loadMatrix('bulk-0') === null);
+}
+
+/* ---------- The cache has to keep all four shops ----------
+
+   Every shop is priced at once. Each one used to write back the copy of the cache it
+   read when it started, so the last to finish erased the other three: an estimate
+   paid for four shops and kept one, and looking at the same list again bought them
+   all a second time. Nothing about it was visible — the prices were right, they were
+   just never there the next time. */
+{
+  // node defines navigator as a getter, so it has to be redefined rather than set.
+  Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
+  globalThis.fetch = async (_url, init) => {
+    const { store, items } = JSON.parse(init.body);
+    return new Response(JSON.stringify({
+      results: items.map((q) => ({ query: q, price: 1.5, title: `${store} ${q}`, source: store })),
+    }), { status: 200 });
+  };
+
+  const items = [{ id: 'a', text: 'milk' }, { id: 'b', text: 'bread' }];
+  await priceAllStores(items);
+
+  const cached = JSON.parse(backing.get('shopnest-prices-v2') ?? '{}');
+  check('every shop priced is a shop cached', Object.keys(cached).length === STORES.length * items.length,
+    `${Object.keys(cached).length} entries for ${STORES.length} shops x ${items.length} items`);
+  for (const shop of STORES) {
+    check(`${shop.id} survived the other shops writing`, `${shop.id}|milk` in cached);
+  }
+
+  // And so a second estimate of the same list costs nothing.
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response('{}', { status: 500 }); };
+  await priceAllStores(items);
+  check('a second estimate of the same list asks nobody', calls === 0, `${calls} calls`);
 }
 
 console.log(failures === 0 ? 'compare: all checks passed' : `compare: ${failures} failures`);
