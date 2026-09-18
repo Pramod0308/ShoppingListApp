@@ -39,7 +39,7 @@ const matrix = (byStore) =>
   check('totals add up', rows.find((r) => r.store === 'asda').total === 3);
   check('a full basket reports complete', complete === true);
   check('every shop is listed, in a fixed order',
-    rows.map((r) => r.store).join() === 'asda,aldi,morrisons,sainsburys', rows.map((r) => r.store).join());
+    rows.map((r) => r.store).join() === 'asda,aldi,lidl,morrisons,sainsburys', rows.map((r) => r.store).join());
 }
 
 // 2. The case that matters: a shop stocking nothing totals £0.00 and must not win.

@@ -348,7 +348,7 @@ let matrixItems = [];
 function matrixCell(item, storeId, cheapest) {
   const result = priceMatrix.get(storeId)?.get(item.id);
   const td = document.createElement('td');
-  td.className = 'px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap border-t border-line';
+  td.className = 'px-1 py-1.5 text-right tabular-nums whitespace-nowrap border-t border-line';
 
   if (!result || result.error) {
     td.textContent = '—';
@@ -402,14 +402,14 @@ function renderMatrix() {
   matrixHeadEl.innerHTML = '';
   const head = document.createElement('tr');
   const corner = document.createElement('th');
-  corner.className = 'px-1.5 py-1.5 text-left font-medium text-faint sticky left-0 bg-surface z-10';
+  corner.className = 'px-1 py-1.5 text-left font-medium text-faint sticky left-0 bg-surface z-10';
   corner.scope = 'col';
   corner.textContent = 'Item';
   head.appendChild(corner);
   for (const s of STORES) {
     const th = document.createElement('th');
     th.scope = 'col';
-    th.className = 'px-1.5 py-1.5 text-right font-medium whitespace-nowrap '
+    th.className = 'px-1 py-1.5 text-right font-medium whitespace-nowrap '
       + (s.id === storeSelectEl?.value ? 'text-ink' : 'text-faint');
     th.textContent = s.label;
     head.appendChild(th);
@@ -421,7 +421,7 @@ function renderMatrix() {
     const tr = document.createElement('tr');
     const th = document.createElement('th');
     th.scope = 'row';
-    th.className = 'px-1.5 py-1.5 text-left font-normal text-ink border-t border-line max-w-[5rem] truncate sticky left-0 bg-surface';
+    th.className = 'px-1 py-1.5 text-left font-normal text-ink border-t border-line max-w-[5rem] truncate sticky left-0 bg-surface';
     th.textContent = item.text;
     th.title = item.text;
     tr.appendChild(th);
@@ -435,7 +435,7 @@ function renderMatrix() {
   const foot = document.createElement('tr');
   const label = document.createElement('th');
   label.scope = 'row';
-  label.className = 'px-1.5 py-1.5 text-left font-medium text-ink border-t-2 border-line sticky left-0 bg-surface';
+  label.className = 'px-1 py-1.5 text-left font-medium text-ink border-t-2 border-line sticky left-0 bg-surface';
   label.textContent = 'Total';
   foot.appendChild(label);
   for (const row of rows) {
@@ -444,7 +444,7 @@ function renderMatrix() {
     // A total over fewer items is not a rival basket, and £3.73 for three things
     // reads as the winner next to £15.70 for five unless it is visibly dimmer.
     const comparable = row.priced === items.length;
-    td.className = 'px-1.5 py-1.5 text-right tabular-nums whitespace-nowrap border-t-2 border-line '
+    td.className = 'px-1 py-1.5 text-right tabular-nums whitespace-nowrap border-t-2 border-line '
       + (isBest ? 'bg-accent-soft font-semibold text-accent' : comparable ? 'text-ink' : 'text-faint');
     // A total over fewer items is not the same basket, so it says how many.
     td.textContent = row.priced ? formatMoney(row.total) : '—';
@@ -461,12 +461,12 @@ function renderMatrix() {
   // two totals of different baskets sit next to each other looking comparable.
   const counts = document.createElement('tr');
   const countLabel = document.createElement('td');
-  countLabel.className = 'px-1.5 pb-1.5 text-left text-[11px] text-faint sticky left-0 bg-surface';
+  countLabel.className = 'px-1 pb-1.5 text-left text-[11px] text-faint sticky left-0 bg-surface';
   countLabel.textContent = 'of ' + plural(items.length, 'item');
   counts.appendChild(countLabel);
   for (const row of rows) {
     const td = document.createElement('td');
-    td.className = 'px-1.5 pb-1.5 text-right text-[11px] text-faint tabular-nums';
+    td.className = 'px-1 pb-1.5 text-right text-[11px] text-faint tabular-nums';
     td.textContent = `${row.priced}`;
     counts.appendChild(td);
   }

@@ -49,8 +49,8 @@ from the URL on arrival, so the secret does not linger in history. Your name and
 colour ride along in the document, so shared lists show who made what — there is no
 account behind it.
 
-**Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
-Aldi, Morrisons and Sainsbury's — and lays them out as a matrix: a row per item, a
+**Cost estimate.** Estimate prices what is still to buy at all five shops — ASDA,
+Aldi, Lidl, Morrisons and Sainsbury's — and lays them out as a matrix: a row per item, a
 column per shop, the cheapest shop for each item picked out, and a row of totals with
 the cheapest basket picked out. Every price links to that shop's own search for the
 product it was matched to. Anything a shop does not stock reads `n/a`; anything that
@@ -261,10 +261,16 @@ npm run test:signalling
 - Only the most recent deletions are listed, so a row that falls off the end of that
   section can no longer be put back — Clear is still the only thing that removes one
   for good, but it stops being reachable before then.
-- **Aldi returns no prices** and reports every item as not stocked, which matches its
-  barely selling groceries online in the UK. The other three work — see
-  [Cost estimate](#cost-estimate) for how that was measured. Reading the shops' own
-  pages instead was tried and removed; that section has the detail.
+- **Aldi returns no prices**, and Lidl is expected to behave the same way: neither
+  sells groceries online in the UK, so Google Shopping carries next to no listings
+  for them and the lookup honestly reports "not stocked" rather than inventing a
+  number. Listings are now matched on the host they link to as well as the seller
+  name, which recovers any that are filed under a name the filter does not know —
+  but if there are no listings at all, nothing can recover them. `debug: true`
+  against the Worker shows what the search actually returns; see
+  [Cost estimate](#cost-estimate).
+  Reading the shops' own pages instead was tried and removed; that section has the
+  detail.
 - Release signing is wired to repository secrets, so a tag build fails rather than
   publishing a debug-signed APK if they are ever missing.
 - The iOS target builds but has never been signed or installed on a device. CI
@@ -272,11 +278,11 @@ npm run test:signalling
 
 ## Cost estimate
 
-The list view prices what is on it at all four supermarkets (ASDA, Aldi, Morrisons,
-Sainsbury's) at once and lays the answers out as a matrix, so the point of it is
-comparison rather than a single number.
+The list view prices what is on it at all five supermarkets (ASDA, Aldi, Lidl,
+Morrisons, Sainsbury's) at once and lays the answers out as a matrix, so the point
+of it is comparison rather than a single number.
 
-**That costs about four times the credits of a single-shop estimate** — one request
+**That costs about five times the credits of a single-shop estimate** — one request
 per shop, and Sainsbury's needs a second query when naming the shop finds nothing.
 The per (item, shop) cache in `assets/www/pricing.js` is what makes it bearable:
 answers are held for 7 days, so looking at the same list again, or switching which
@@ -315,6 +321,24 @@ To deploy the Worker:
 ```bash
 cd worker && npx wrangler secret put SERPER_API_KEY && npx wrangler deploy
 ```
+
+**The set of shops lives in the Worker as well as the app**, so adding one — Lidl,
+most recently — takes a redeploy before it answers anything. Until then the app asks
+for a store the deployed Worker does not serve and that column reads as an error
+rather than as prices.
+
+To see what the search actually returns for a shop, rather than guessing from an
+empty column:
+
+```bash
+curl -s -X POST "$PRICE_API_URL" -H 'Content-Type: application/json' \
+  -H 'Origin: https://pramod0308.github.io' \
+  -d '{"store":"aldi","items":["milk"],"debug":true}' | head -40
+```
+
+It returns the first ten listings for both the named-shop and plain searches, with
+each one's seller and link, which is how "Aldi returns nothing" was established in
+the first place.
 
 Then put the deployed URL in `PRICE_API_URL` in `assets/www/sync-config.js`. Until
 that is set the button says so rather than failing. A host outside `*.workers.dev`

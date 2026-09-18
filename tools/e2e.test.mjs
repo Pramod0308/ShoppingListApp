@@ -487,12 +487,20 @@ check('no matrix when nothing could be priced', !(await page.isVisible('#priceMa
 // Known prices per shop, so the cheapest cell and the cheapest basket are facts
 // rather than whatever the live API happens to say today. Aldi deliberately stocks
 // nothing — the case that would otherwise "win" every comparison on £0.00.
+// Aldi stocks nothing and Lidl stocks two of three cheaply: between them they cover
+// both ways the naive "lowest total wins" goes wrong. Lidl's £2.00 is the lowest
+// number in the table and must still lose to Sainsbury's £4.90 for the whole list.
 const PRICES = {
   asda:       { Milk: 0.95, Bread: 1.40, Eggs: 2.60 },
   aldi:       {},
+  lidl:       { Milk: 0.80, Bread: 1.20 },
   morrisons:  { Milk: 0.90, Bread: 1.60, Eggs: 2.80 },
   sainsburys: { Milk: 1.10, Bread: 1.30, Eggs: 2.50 },
 };
+// Derived rather than hard-coded, so adding a shop to STORES does not silently rot
+// these numbers into a lie — it changes them.
+const PRICED_CELLS = Object.values(PRICES).reduce((n, shop) => n + Object.keys(shop).length, 0);
+const NA_CELLS = STORES.length * 3 - PRICED_CELLS;
 priceFixture = (store, items) => ({
   results: items.map((q) => {
     const price = PRICES[store]?.[q];
@@ -528,12 +536,14 @@ check('and a row per item',
 
 // Every price is a link to that shop's own search for the matched product.
 const links = await page.$$eval('#matrixBody a', (a) => a.map((x) => x.href));
-check('every price is a link', links.length === 9, `${links.length} links for 9 prices`);
+check('every price is a link', links.length === PRICED_CELLS,
+  `${links.length} links for ${PRICED_CELLS} prices`);
 check('the links point at the shops, not at one shop',
   new Set(links.map((l) => new URL(l).host)).size >= 3,
   [...new Set(links.map((l) => new URL(l).host))].join(', '));
-check('a shop that stocks nothing shows n/a rather than a price',
-  (await page.$$eval('#matrixBody td', (t) => t.filter((x) => x.textContent.trim() === 'n/a').length)) === 3);
+check('what a shop does not stock shows n/a rather than a price',
+  (await page.$$eval('#matrixBody td', (t) => t.filter((x) => x.textContent.trim() === 'n/a').length)) === NA_CELLS,
+  `expected ${NA_CELLS}`);
 
 // The cheapest cell in each row, which is the point of the whole table.
 const cheapest = await page.$$eval('#matrixBody tr', (trs) =>
@@ -542,16 +552,23 @@ const cheapest = await page.$$eval('#matrixBody tr', (trs) =>
     const i = cells.findIndex((c) => c.className.includes('bg-accent-soft'));
     return `${tr.querySelector('th').textContent}:${i}`;
   }));
-// Columns are ASDA, Aldi, Morrisons, Sainsbury's — so 2, 3 and 3.
+// Columns are ASDA, Aldi, Lidl, Morrisons, Sainsbury's. Lidl is cheapest on the two
+// it stocks; Sainsbury's on the one it does not.
 check('the cheapest shop is highlighted per row',
-  cheapest.join(' ') === 'Milk:2 Bread:3 Eggs:3', cheapest.join(' '));
+  cheapest.join(' ') === 'Milk:2 Bread:2 Eggs:4', cheapest.join(' '));
 
-// Totals: ASDA 4.95, Aldi nothing, Morrisons 5.30, Sainsbury's 4.90.
+// Totals: ASDA 4.95, Aldi nothing, Lidl 2.00 (two items), Morrisons 5.30, Sainsbury's 4.90.
 const totals = await page.$$eval('#matrixFoot tr:first-child td', (t) => t.map((x) => x.textContent.trim()));
-check('each shop gets a total', totals.join(' ') === '£4.95 — £5.30 £4.90', totals.join(' '));
+check('each shop gets a total', totals.join(' ') === '£4.95 — £2.00 £5.30 £4.90', totals.join(' '));
 const bestCol = await page.$$eval('#matrixFoot tr:first-child td',
   (t) => t.findIndex((x) => x.className.includes('bg-accent-soft')));
-check('the cheapest total is highlighted', bestCol === 3, `column ${bestCol}`);
+check('the cheapest complete basket is highlighted, not the cheapest number',
+  bestCol === 4, `column ${bestCol}`);
+// Lidl's total is the smallest on screen and covers two thirds of the list, so it
+// has to read as out of the running rather than as the answer.
+check('a total over fewer items is dimmed',
+  await page.$$eval('#matrixFoot tr:first-child td',
+    (t) => t[2].className.includes('text-faint')));
 check('the empty shop does not win on nothing',
   (await page.textContent('#estimateSummary')).includes("Sainsbury's"),
   await page.textContent('#estimateSummary'));
@@ -560,7 +577,7 @@ check('the summary names the saving',
   await page.textContent('#estimateSummary'));
 check('coverage is stated under the totals',
   (await page.$$eval('#matrixFoot tr:last-child td', (t) => t.map((x) => x.textContent.trim()))).join(' ')
-    === 'of 3 items 3 0 3 3',
+    === 'of 3 items 3 0 2 3 3',
   (await page.$$eval('#matrixFoot tr:last-child td', (t) => t.map((x) => x.textContent.trim()))).join(' '));
 
 // Switching shop re-reads what was already fetched rather than asking again.
