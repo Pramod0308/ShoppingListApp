@@ -44,8 +44,21 @@ const STORE_LABELS = {
   tesco: 'Tesco',
 };
 
+// What a product page looks like at each shop, so a resolved link is the product
+// rather than a category or a help page. Every one of these shops puts its products
+// under /product/ or /products/; Sainsbury's has an older /shop/gb/groceries/ form
+// still in use.
+const PRODUCT_PATHS = {
+  asda: /\/product\//i,
+  morrisons: /\/products?\//i,
+  sainsburys: /\/(product|shop\/gb\/groceries)\//i,
+  tesco: /\/products\//i,
+};
+
 const MAX_ITEMS = 40;
 const MAX_QUERY = 80;
+// Product names are longer than the search terms people type into the list.
+const MAX_PRODUCT = 120;
 
 // Only these origins may call it. A Worker with an open CORS policy is a free
 // search API for anyone who finds the URL, billed to whoever owns the key.
@@ -149,6 +162,51 @@ async function priceFor(query, store, apiKey) {
   };
 }
 
+// Finding the product's own page at the shop.
+//
+// The shopping API cannot do this: every listing it returns links to
+// google.com/search, never to the retailer, so a price can be shown but not opened.
+// A plain web search restricted to the shop's own domain is the one thing that
+// turns a matched product name into a page on that shop's site.
+//
+// It is a separate call, made when someone actually taps a price rather than for
+// every cell of the matrix. Resolving all of them up front would cost a search for
+// every (item, shop) pair whether or not anyone ever followed the link.
+async function searchFor(q, apiKey) {
+  return fetch('https://google.serper.dev/search', {
+    method: 'POST',
+    headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q, gl: 'gb', hl: 'en', num: 10 }),
+  });
+}
+
+function pathOf(link) {
+  try {
+    return new URL(link).pathname;
+  } catch {
+    return '';
+  }
+}
+
+async function productUrlFor(product, store, apiKey) {
+  const { domains = [] } = STORES[store] ?? {};
+  const res = await searchFor(`${product} site:${domains[0]}`, apiKey);
+  if (!res.ok) return { error: `lookup failed (${res.status})` };
+  const data = await res.json();
+  const organic = Array.isArray(data.organic) ? data.organic : [];
+
+  // Only the shop's own pages. `site:` is a request, not a guarantee — Google will
+  // pad a thin result set with pages from elsewhere, and one of those opened as
+  // "the product at Tesco" would be a lie.
+  const onSite = organic.filter((r) => typeof r.link === 'string' && hostMatches(r.link, domains));
+  const pattern = PRODUCT_PATHS[store];
+  // A page under the shop's product path is the answer. Failing that, the top hit on
+  // the shop's own site beats sending someone back to a search box.
+  const best = onSite.find((r) => pattern?.test(pathOf(r.link))) ?? onSite[0] ?? null;
+
+  return { url: best?.link ?? null, title: best?.title ?? null };
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') ?? '';
@@ -173,6 +231,17 @@ export default {
     const store = String(body.store ?? '').toLowerCase();
     if (!STORES[store]) {
       return json({ error: `store must be one of ${Object.keys(STORES).join(', ')}` }, 400, origin);
+    }
+
+    // Resolving one product's page. Answered before the price path so it never
+    // falls through into a shopping lookup it has no items for.
+    if (typeof body.product === 'string') {
+      const product = body.product.trim().slice(0, MAX_PRODUCT);
+      if (!product) return json({ error: 'product must not be empty' }, 400, origin);
+      const found = await productUrlFor(product, store, env.SERPER_API_KEY)
+        .catch(() => ({ error: 'lookup failed' }));
+      if (found.error) return json({ store, product, error: found.error }, 502, origin);
+      return json({ store, product, url: found.url, title: found.title }, 200, origin);
     }
 
     if (body.debug === true) {

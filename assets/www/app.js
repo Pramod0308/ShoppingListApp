@@ -2,7 +2,8 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
-import { STORES, isConfigured, priceAllStores, compareStores, cheapestFor, formatMoney, sourceName, productUrl } from "./pricing.js";
+import { STORES, isConfigured, priceAllStores, compareStores, cheapestFor, formatMoney, sourceName, productUrl,
+         saveMatrix, loadMatrix, forgetMatrix, matrixFreshness, goneFromList, resolveProductUrl } from "./pricing.js";
 
 const store = new Store();
 const linkSecret = resolveLinkSecret(location.search);
@@ -82,6 +83,9 @@ const matrixEl          = document.getElementById('priceMatrix');
 const matrixHeadEl      = document.getElementById('matrixHead');
 const matrixBodyEl      = document.getElementById('matrixBody');
 const matrixFootEl      = document.getElementById('matrixFoot');
+const matrixStatusEl    = document.getElementById('matrixStatus');
+const matrixStatusDot   = document.getElementById('matrixStatusDot');
+const matrixStatusText  = document.getElementById('matrixStatusText');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -306,10 +310,21 @@ async function estimateCost() {
   const storeId = storeSelectEl.value;
   prices = priceMatrix.get(storeId) ?? new Map();
   matrixItems = target;
-  renderItems();
+  matrixAt = Date.now();
+  // Saved against this list so going back to the home screen — or to another list
+  // and back — does not throw away an estimate that cost a search per item per shop.
+  saveMatrix(listId, target, priceMatrix);
   renderMatrix();
+  renderItems();
 
-  const { rows, best, complete } = compareStores(target, priceMatrix);
+  showComparisonSummary(target);
+}
+
+// The headline above the table: which shop wins, and by how much. Shared with the
+// restore path, because a table that comes back without the sentence that explains
+// it has only half survived the trip to the home screen.
+function showComparisonSummary(items) {
+  const { rows, best, complete } = compareStores(items, priceMatrix);
   const winner = rows.find((r) => r.store === best);
 
   if (!winner) {
@@ -323,9 +338,8 @@ async function estimateCost() {
     return;
   }
 
-  // The headline is the comparison, since that is what the matrix is for. Saying
-  // how many items a total covers matters when no shop stocks the lot — otherwise
-  // "cheapest" would be comparing baskets that are not the same basket.
+  // Saying how many items a total covers matters when no shop stocks the lot —
+  // otherwise "cheapest" would be comparing baskets that are not the same basket.
   const parts = [
     complete
       ? `Cheapest at ${winner.label}: ${formatMoney(winner.total)} for all ${plural(winner.priced, 'item')}`
@@ -344,6 +358,75 @@ async function estimateCost() {
 // The rows the matrix is about, kept so a change of shop can redraw it without
 // asking what is on the list again.
 let matrixItems = [];
+// When it was generated, and which of its rows have since left the list. Both are
+// what let the table say whether it still describes what you are looking at.
+let matrixAt = 0;
+let matrixGone = new Set();
+// The list as it was the last time the table was drawn. Items sync per keystroke,
+// so redrawing on every change would rebuild the whole table while someone types;
+// this rebuilds only when the rows or their text actually differ.
+let matrixDrawnFor = null;
+
+// How long to wait for the product page before settling for the shop's search.
+const RESOLVE_TIMEOUT_MS = 6000;
+
+// Following a price through to the product's own page at that shop.
+//
+// The link on the page is the shop's search for the matched product: it always
+// works, needs no lookup, and is what someone gets with JavaScript off or the
+// lookup down. The product's own page has to be searched for (see
+// resolveProductUrl), and that is a network round trip — so the tab is opened
+// first, synchronously, because a window.open after an await is a popup as far as
+// the browser is concerned and gets blocked.
+//
+// Whatever happens, the tab lands somewhere useful: the product if it was found,
+// the shop's search for it if not.
+function openProductPage(event, storeId, result) {
+  const fallback = productUrl(storeId, result);
+  if (!fallback || !result?.title) return; // nothing better to offer than the href
+
+  const tab = window.open('about:blank', '_blank');
+  if (!tab) return; // popups blocked: let the href navigate as it always did
+  event.preventDefault();
+  // The new tab must not be able to reach back into this one.
+  try { tab.opener = null; } catch { /* already navigating cross-origin */ }
+  try { tab.document.title = 'Finding the product…'; } catch { /* not ours to write */ }
+
+  const timeout = new Promise((resolve) => setTimeout(resolve, RESOLVE_TIMEOUT_MS, null));
+  Promise.race([resolveProductUrl(storeId, result.title), timeout])
+    .catch(() => null)
+    .then((url) => {
+      try {
+        tab.location.replace(url || fallback);
+      } catch {
+        // The tab was closed while we were looking.
+      }
+    });
+}
+
+// Puts back the last estimate run for the open list, if there is one. Nothing is
+// re-fetched: this is the saved answer, and how old it is shows in the status line.
+function restoreMatrix() {
+  prices = new Map();
+  priceMatrix = new Map();
+  matrixItems = [];
+  matrixAt = 0;
+  matrixGone = new Set();
+  matrixDrawnFor = null;
+
+  const saved = listId ? loadMatrix(listId) : null;
+  if (saved) {
+    priceMatrix = saved.byStore;
+    matrixItems = saved.items;
+    matrixAt = saved.at;
+    prices = priceMatrix.get(storeSelectEl?.value) ?? new Map();
+    showComparisonSummary(matrixItems);
+  }
+  // The table is not drawn here: the list's items arrive with renderItems, and
+  // judging the saved prices against rows that have not loaded would flash "out of
+  // date" at someone whose list is merely still opening.
+  matrixEl?.classList.add('hidden');
+}
 
 function matrixCell(item, storeId, cheapest) {
   const result = priceMatrix.get(storeId)?.get(item.id);
@@ -378,6 +461,7 @@ function matrixCell(item, storeId, cheapest) {
     cell.target = '_blank';
     cell.rel = 'noopener noreferrer';
     cell.title = `${result.title} — open at ${STORES.find((s) => s.id === storeId)?.label ?? storeId}`;
+    cell.onclick = (e) => openProductPage(e, storeId, result);
   } else {
     cell.title = result.title ?? '';
   }
@@ -386,9 +470,50 @@ function matrixCell(item, storeId, cheapest) {
   return td;
 }
 
+// A cheap fingerprint of what is on the list: which rows, and what they say. Two
+// lists with the same fingerprint would produce the same matrix.
+function matrixSignature(items) {
+  return items.map((i) => `${i.id}\u0000${i.text}`).join('\u0001');
+}
+
+// Says, in one line, whether the table below still describes the list.
+//
+// Without this an estimate ages silently: prices stay on screen looking current
+// while items are added and renamed underneath them, and the only way to tell is to
+// compare the rows by eye.
+function renderMatrixStatus(pricedItems, currentItems) {
+  if (!matrixStatusEl) return;
+  const { fresh, added, removed, renamed } = matrixFreshness(pricedItems, currentItems);
+  const when = matrixAt ? ago(new Date(matrixAt).toISOString()) : '';
+
+  if (fresh) {
+    matrixStatusDot.style.backgroundColor = 'rgb(var(--accent))';
+    matrixStatusEl.className = 'flex items-center gap-1.5 px-2 py-1.5 text-[11px] leading-tight border-b border-line text-muted';
+    matrixStatusText.textContent = when ? `Up to date · priced ${when}` : 'Up to date with this list';
+    matrixStatusText.title = 'Every item on the list is priced here, and nothing has changed since.';
+    return;
+  }
+
+  // Name the drift rather than just flagging it: "2 added" tells you whether to
+  // re-estimate now or carry on, and a bare "out of date" does not.
+  const bits = [];
+  if (added) bits.push(`${added} added`);
+  if (removed) bits.push(`${removed} removed`);
+  if (renamed) bits.push(`${renamed} changed`);
+  matrixStatusDot.style.backgroundColor = 'rgb(var(--danger))';
+  matrixStatusEl.className = 'flex items-center gap-1.5 px-2 py-1.5 text-[11px] leading-tight border-b border-line text-danger';
+  matrixStatusText.textContent = `Out of date · ${bits.join(', ')} since — Estimate again`;
+  matrixStatusText.title = `These prices were looked up for a different set of items${when ? `, ${when}` : ''}.`;
+}
+
 function renderMatrix() {
   if (!matrixEl) return;
   const items = priceMatrix.size ? matrixItems : [];
+  const current = shoppableItems();
+  // Recorded whether or not a table gets drawn, so the redraw check in renderItems
+  // fires on a real change rather than on every render.
+  matrixDrawnFor = matrixSignature(current);
+
   // A grid of dashes is not a comparison. When the lookup failed outright, or no
   // shop stocks any of it, the summary line says so on its own and the table would
   // only take up room repeating it.
@@ -398,6 +523,9 @@ function renderMatrix() {
     return;
   }
   matrixEl.classList.remove('hidden');
+
+  matrixGone = goneFromList(items, current);
+  renderMatrixStatus(items, current);
 
   matrixHeadEl.innerHTML = '';
   const head = document.createElement('tr');
@@ -421,9 +549,13 @@ function renderMatrix() {
     const tr = document.createElement('tr');
     const th = document.createElement('th');
     th.scope = 'row';
-    th.className = 'px-1 py-1.5 text-left font-normal text-ink border-t border-line max-w-[5rem] truncate sticky left-0 bg-surface';
+    // A row priced for something no longer on the list is history, not a price to
+    // act on — so it reads as struck through rather than as part of the basket.
+    const gone = matrixGone.has(item.id);
+    th.className = 'px-1 py-1.5 text-left font-normal border-t border-line max-w-[5rem] truncate sticky left-0 bg-surface '
+      + (gone ? 'text-faint line-through' : 'text-ink');
     th.textContent = item.text;
-    th.title = item.text;
+    th.title = gone ? `${item.text} — no longer on the list` : item.text;
     tr.appendChild(th);
     const cheapest = cheapestFor(item.id, priceMatrix);
     for (const s of STORES) tr.appendChild(matrixCell(item, s.id, cheapest));
@@ -582,6 +714,9 @@ function copyDeviceLink() {
 function deleteList(id) {
   if (!confirm('Delete this list (and all its items)?')) return;
   store.deleteList(id);
+  // The saved estimate goes with it, or it would sit in storage for a list that no
+  // longer exists — and reappear if the same id were ever adopted again.
+  forgetMatrix(id);
 }
 
 function createListCard(list) {
@@ -896,9 +1031,11 @@ function updateItemRow(li, item) {
   // a control that quietly does nothing.
   handle.classList.toggle('hidden', deleted || done);
 
-  // Naming the author on a list only one person has touched is noise, so it
-  // appears once a list actually has more than one person in it.
-  const who = shared && item.authorId && people[item.authorId]
+  // Who put this here. It used to appear only on lists with more than one person in
+  // them, on the reasoning that your own name is noise — but on a shared list the
+  // rows added before anyone else joined then stayed anonymous, which is exactly
+  // where you want to know. It is named whenever it is known.
+  const who = item.authorId && people[item.authorId]
     ? ` by ${people[item.authorId].name}`
     : '';
   const stamp = deleted
@@ -912,6 +1049,8 @@ function updateItemRow(li, item) {
 
   const author = item.authorId ? people[item.authorId] : null;
   dot.style.backgroundColor = author ? personColour(author.colour) : 'transparent';
+  // The colour is only telling you anything once there is more than one person to
+  // tell apart; the name above carries it on a list of one.
   dot.classList.toggle('hidden', !shared || !author);
   dot.title = author ? `Added by ${author.name}` : '';
 
@@ -926,9 +1065,11 @@ function updateItemRow(li, item) {
     const shop = STORES.find((x) => x.id === storeSelectEl?.value)?.label ?? 'the shop';
     if (href) {
       matched.href = href;
-      matched.title = `Find this at ${shop}`;
+      matched.title = `Open this product at ${shop}`;
+      matched.onclick = (e) => openProductPage(e, storeSelectEl?.value, quote);
     } else {
       matched.removeAttribute('href');
+      matched.onclick = null;
       matched.title = quote.source ?? '';
     }
   }
@@ -977,6 +1118,12 @@ function renderItems() {
 
   toggleSection(doneSectionEl, doneCountEl, done.length);
   toggleSection(deletedSectionEl, deletedCountEl, store.deletedItems(listId).length);
+
+  // The matrix has to answer for the list as it is now, so ticking an item off or
+  // renaming one updates whether it still says "up to date". Only when something it
+  // depends on actually differs: items sync per keystroke, and rebuilding the table
+  // on each one would be work nobody asked for.
+  if (matrixSignature(shoppableItems()) !== matrixDrawnFor) renderMatrix();
 
   attachRipples();
 }
@@ -1096,13 +1243,10 @@ function showListView() {
   if (listView) listView.classList.remove('hidden');
   autoResizeTextarea(inputEl);
   // Rows belong to whichever list is open, so start the view from scratch. The
-  // matrix goes with them: it is about this list's items, and leaving it up would
-  // show the previous list's prices against the new one's rows.
-  prices = new Map();
-  priceMatrix = new Map();
-  matrixItems = [];
-  renderMatrix();
+  // matrix is restored from whatever was last estimated for *this* list — never the
+  // one before it, which would show the previous list's prices against these rows.
   setSummary('');
+  restoreMatrix();
   itemRows.clear();
   doneRows.clear();
   deletedRows.clear();
