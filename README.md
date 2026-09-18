@@ -59,9 +59,12 @@ account behind it.
 **Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
 Morrisons, Sainsbury's and Tesco — and lays them out as a matrix: a row per item, a
 column per shop, the cheapest shop for each item picked out, and a row of totals with
-the cheapest basket picked out. Tapping a price opens that product's own page at that
-shop. Anything a shop does not stock reads `n/a`; anything that could not be checked
-reads `—`.
+the cheapest basket picked out. Each price carries the product it is actually for,
+because four shops' prices for four different paneers is not a comparison. Where a
+shop's nearest listing is not what you searched for, that name is marked in red and
+the headline says so rather than presenting it as the cheapest way to buy what you
+asked for. Tapping a price opens that product's own page at that shop. Anything a
+shop does not stock reads `n/a`; anything that could not be checked reads `—`.
 
 An estimate stays put: it is saved against its list, so leaving for the home screen
 and coming back shows it again without spending another search. Because it is a
@@ -305,7 +308,8 @@ Sainsbury's, Tesco) at once and lays the answers out as a matrix, so the point o
 it is comparison rather than a single number.
 
 **That costs about four times the credits of a single-shop estimate** — one request
-per shop, and Sainsbury's needs a second query when naming the shop finds nothing.
+per shop, and a second for any shop whose first pass did not match everything asked
+for (Sainsbury's needs one almost always, since naming it finds nothing at all).
 Three things keep that bearable, all in `assets/www/pricing.js`:
 
 - answers are cached per (item, shop) for 7 days, so looking at the same list again,
@@ -325,6 +329,22 @@ Because a saved estimate can go on being displayed long after the list has moved
 now and the table says which it is. Renaming an item counts: same ids, same count,
 different products — comparing lengths alone would call that fresh and quote the
 price of something else entirely.
+
+Matching the *product* is a separate problem from matching the shop, and for a while
+only the second was being done: the Worker took the first listing from the right
+retailer, whatever it was. Searching for "Apetina Paneer" therefore came back with
+each shop's own-brand paneer, at four shops out of four — Google ranks by its own
+idea of relevance, and a shop's own brand routinely outranks the brand someone typed.
+Every candidate from the shop is now scored on how much of the search its title
+contains, and the best-matching one wins rather than the first. Whatever it could not
+find comes back in `missing`, which is what lets the table mark a near miss instead of
+passing it off as the product.
+
+Naming the shop in the query makes that worse, not better — it is exactly what pushes
+its own brand up the results — so a first pass that did not find everything asked for
+is retried without the shop name. That is where the branded listing shows up. It costs
+a second search only when the first pass fell short; an exact match on the first pass
+still costs one.
 
 Picking the winner is not simply the smallest total. A shop that stocks none of your
 list totals £0.00, which beats every real shop — and Aldi returns nothing, so that is

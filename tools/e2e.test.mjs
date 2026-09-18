@@ -518,12 +518,20 @@ const PRICES = {
 // these numbers into a lie — it changes them.
 const PRICED_CELLS = Object.values(PRICES).reduce((n, shop) => n + Object.keys(shop).length, 0);
 const NA_CELLS = STORES.length * 3 - PRICED_CELLS;
+// One cell where the shop's listing is not what was asked for — the "Apetina Paneer
+// comes back as the shop's own paneer" case, which the table has to mark rather than
+// pass off as a match.
+const NEAR_MISS = { store: 'sainsburys', item: 'Milk' };
 priceFixture = (store, items) => ({
   results: items.map((q) => {
     const price = PRICES[store]?.[q];
     return price === undefined
       ? { query: q, unavailable: true }
-      : { query: q, price, title: `${store} ${q}`, source: `${store}.co.uk`, link: `https://example.test/${store}/${q}` };
+      : {
+          query: q, price, title: `${store} ${q}`, source: `${store}.co.uk`,
+          link: `https://example.test/${store}/${q}`,
+          missing: store === NEAR_MISS.store && q === NEAR_MISS.item ? ['seeded'] : [],
+        };
   }),
 });
 
@@ -566,6 +574,28 @@ check('every price is a link', links.length === PRICED_CELLS,
 check('the links point at the shops, not at one shop',
   new Set(links.map((l) => new URL(l).host)).size >= 3,
   [...new Set(links.map((l) => new URL(l).host))].join(', '));
+// What each shop is actually selling you, in the cell with its price. Four shops'
+// prices for four different products is not a comparison unless the table says so.
+const cellNames = await page.$$eval('#matrixBody a span:last-child', (s) => s.map((x) => x.textContent));
+check('every price names the product it is for', cellNames.length === PRICED_CELLS,
+  `${cellNames.length} names for ${PRICED_CELLS} prices`);
+check('and each shop names its own listing, not one shared caption',
+  new Set(cellNames).size === PRICED_CELLS, [...new Set(cellNames)].join(' | '));
+check('the product name is in the matrix rather than under the item',
+  !(await page.textContent('#list')).includes(`${STORES[0].id} Milk`),
+  await page.textContent('#list'));
+
+// A price for something that is not what was asked for is still worth seeing, but
+// not as though it matched.
+const nearMisses = await page.$$eval('#matrixBody [title*="closest"]', (a) => a.map((x) => x.title));
+check('a listing missing what was searched for is marked as the closest match',
+  nearMisses.length === 1, `${nearMisses.length} marked`);
+check('and the tooltip names what the shop did not have',
+  nearMisses[0]?.includes('seeded'), nearMisses[0] ?? '(none)');
+check('a matched listing is not marked',
+  (await page.$$eval('#matrixBody a', (a) => a.filter((x) => /open at/.test(x.title)).length))
+    === PRICED_CELLS - 1);
+
 check('what a shop does not stock shows n/a rather than a price',
   (await page.$$eval('#matrixBody td', (t) => t.filter((x) => x.textContent.trim() === 'n/a').length)) === NA_CELLS,
   `expected ${NA_CELLS}`);
@@ -597,6 +627,12 @@ check('a total over fewer items is dimmed',
 check('the empty shop does not win on nothing',
   (await page.textContent('#estimateSummary')).includes("Sainsbury's"),
   await page.textContent('#estimateSummary'));
+// The winning basket contains that near miss, so the headline must not present it
+// as the cheapest way to buy what was actually asked for.
+check('the headline says when the winner is only the closest match',
+  /1 price is the closest match, not exact/.test(await page.textContent('#estimateSummary')),
+  await page.textContent('#estimateSummary'));
+
 check('the summary names the saving',
   /£0\.05 less than ASDA/.test(await page.textContent('#estimateSummary')),
   await page.textContent('#estimateSummary'));
