@@ -51,3 +51,10 @@ node_modules/
 android/key.properties
 android/*.jks
 android/*.keystore
+
+# Wrangler's local dev state (miniflare's SQLite, caches and traces). Regenerated
+# by `wrangler dev`, and 2MB of it was committed once by accident.
+.wrangler/
+
+# Playwright's browser downloads, if the default location is used.
+/test-results/

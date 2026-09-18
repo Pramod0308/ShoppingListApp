@@ -13,7 +13,9 @@
     "serve": "node tools/serve.mjs",
     "test": "node tools/order-key.test.mjs && node tools/doc-model.test.mjs && node tools/pricing.test.mjs",
     "icons": "node tools/make-icons.mjs",
-    "build:sw": "node tools/make-sw.mjs"
+    "build:sw": "node tools/make-sw.mjs",
+    "test:e2e": "node tools/e2e.test.mjs",
+    "test:signalling": "node tools/signalling.test.mjs"
   },
   "dependencies": {
     "y-indexeddb": "^9.0.12",
@@ -25,7 +27,9 @@
     "@tailwindcss/forms": "^0.5.9",
     "buffer": "^6.0.3",
     "esbuild": "^0.24.0",
+    "playwright": "^1.56.0",
     "process": "^0.11.10",
-    "tailwindcss": "^3.4.14"
+    "tailwindcss": "^3.4.14",
+    "ws": "^8.18.0"
   }
 }

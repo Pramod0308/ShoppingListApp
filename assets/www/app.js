@@ -51,6 +51,9 @@ const linkDeviceBtn     = document.getElementById('linkDevice');
 const profileBtn        = document.getElementById('profileBtn');
 const sortToggleBtn     = document.getElementById('sortToggle');
 const sortLabelEl       = document.getElementById('sortLabel');
+const archivedSectionEl = document.getElementById('archivedSection');
+const archivedGridEl    = document.getElementById('archivedGrid');
+const archivedCountEl   = document.getElementById('archivedCount');
 
 /* ---------- Elements (LIST VIEW) ---------- */
 const listView          = document.getElementById('listView');
@@ -388,6 +391,9 @@ function reconcile(container, entries, cache, create, update) {
    HOME (lists)
    ============================================================ */
 const listRows = new Map();
+// Archived cards live in their own container, so they get their own cache —
+// reconcile drops a card from one and builds it in the other as a list moves.
+const archivedRows = new Map();
 let emptyStateEl = null;
 
 function createList() {
@@ -480,14 +486,32 @@ function createListCard(list) {
   const shareBtnNode = document.createElement('button');
   shareBtnNode.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
   shareBtnNode.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">ios_share</span>';
+  shareBtnNode.setAttribute('aria-label', 'Share this list');
+  shareBtnNode.title = 'Share';
   shareBtnNode.onclick = (e) => { e.stopPropagation(); shareList(id); };
+
+  // Setting a list aside, and taking it back out. Only one is ever on screen.
+  const archiveBtn = document.createElement('button');
+  archiveBtn.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
+  archiveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">archive</span>';
+  archiveBtn.setAttribute('aria-label', 'Archive this list');
+  archiveBtn.title = 'Archive';
+  archiveBtn.onclick = (e) => { e.stopPropagation(); store.archiveList(id); };
+
+  const unarchiveBtn = document.createElement('button');
+  unarchiveBtn.className = 'icon-btn hidden w-9 h-9 items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
+  unarchiveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">unarchive</span>';
+  unarchiveBtn.setAttribute('aria-label', 'Put this list back on the home screen');
+  unarchiveBtn.title = 'Put back';
+  unarchiveBtn.onclick = (e) => { e.stopPropagation(); store.unarchiveList(id); };
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-danger hover:bg-danger-soft transition-colors';
   deleteBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">delete</span>';
+  deleteBtn.setAttribute('aria-label', 'Delete this list');
   deleteBtn.onclick = (e) => { e.stopPropagation(); deleteList(id); };
 
-  actions.append(openBtn, shareBtnNode, deleteBtn);
+  actions.append(openBtn, shareBtnNode, archiveBtn, unarchiveBtn, deleteBtn);
 
   card.onclick = (e) => {
     if (!e.target.closest('button') && !e.target.closest('.drag')) {
@@ -497,15 +521,23 @@ function createListCard(list) {
 
   textCol.append(meta);
   card.append(rowTop, actions);
-  card.refs = { title, countEl, updatedEl, drag, creatorEl };
+  card.refs = { title, countEl, updatedEl, drag, creatorEl, archiveBtn, unarchiveBtn };
   return card;
 }
 
 function updateListCard(card, list) {
-  const { title, countEl, updatedEl, drag, creatorEl } = card.refs;
+  const { title, countEl, updatedEl, drag, creatorEl, archiveBtn, unarchiveBtn } = card.refs;
+  const archived = list.archived;
 
-  // Dragging only means anything when the manual order is the one on screen.
-  const draggable = listSort === 'custom';
+  archiveBtn.classList.toggle('hidden', archived);
+  archiveBtn.classList.toggle('flex', !archived);
+  unarchiveBtn.classList.toggle('hidden', !archived);
+  unarchiveBtn.classList.toggle('flex', archived);
+
+  // Dragging only means anything when the manual order is the one on screen, and
+  // reorder is wired to the active grid only — a handle in the archived section
+  // would be a control that quietly does nothing.
+  const draggable = listSort === 'custom' && !archived;
   drag.classList.toggle('hidden', !draggable);
   drag.tabIndex = draggable ? 0 : -1;
 
@@ -537,9 +569,13 @@ function updateListCard(card, list) {
 
 function renderLists() {
   if (!listsGrid) return;
-  const lists = store.lists(listSort);
+  const lists = store.activeLists(listSort);
+  const archived = store.archivedLists();
 
-  if (!lists.length) {
+  // "Nothing here yet" alongside a full Archived section would be a lie about an
+  // empty account rather than about an empty home screen, so it waits until there
+  // is genuinely nothing anywhere.
+  if (!lists.length && !archived.length) {
     if (!emptyStateEl) {
       emptyStateEl = document.createElement('div');
       emptyStateEl.className = 'flex flex-col items-center justify-center gap-2 py-14 text-center';
@@ -554,6 +590,8 @@ function renderLists() {
 
   renderProfileButton();
   reconcile(listsGrid, lists, listRows, createListCard, updateListCard);
+  reconcile(archivedGridEl, archived, archivedRows, createListCard, updateListCard);
+  toggleSection(archivedSectionEl, archivedCountEl, archived.length);
   attachRipples();
 }
 
@@ -656,6 +694,17 @@ function createItemRow(item) {
   del.className = 'icon-btn w-9 h-9 flex items-center justify-center rounded-lg text-faint hover:text-danger hover:bg-danger-soft transition-colors';
   del.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">delete</span>';
   del.onclick = () => store.deleteItem(listId, id);
+  del.setAttribute('aria-label', 'Delete this item');
+
+  // Deleting is one tap and asks nothing, which is the right weight for something
+  // that only moves a row into a section below — but only while that move can be
+  // undone. This is the control that makes it true.
+  const restore = document.createElement('button');
+  restore.className = 'icon-btn hidden w-9 h-9 items-center justify-center rounded-lg text-faint hover:text-ink hover:bg-raised transition-colors';
+  restore.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">undo</span>';
+  restore.onclick = () => store.restoreItem(listId, id);
+  restore.setAttribute('aria-label', 'Put this item back on the list');
+  restore.title = 'Put back';
 
   const handle = document.createElement('div');
   handle.className = 'drag handle w-7 h-9 flex items-center justify-center rounded-md text-faint hover:text-muted transition-colors cursor-grab active:cursor-grabbing focus:ring-2 focus:ring-accent focus:outline-none';
@@ -663,16 +712,16 @@ function createItemRow(item) {
   handle.setAttribute('aria-label', 'Reorder item (Press Space to grab)');
   handle.innerHTML = '<span class="material-symbols-outlined text-[18px] leading-none">drag_indicator</span>';
 
-  actionsContainer.append(del, handle);
+  actionsContainer.append(restore, del, handle);
   rightContainer.append(mobileMeta, dot, price, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched };
+  li.refs = { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, handle, label, dot, price, matched } = li.refs;
+  const { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -685,6 +734,7 @@ function updateItemRow(li, item) {
 
   // A deleted row is a record, not a control. It loses the card chrome as well as
   // the controls, so it reads as history rather than as something still on the list.
+  // Putting it back is the one thing it can still do, and the only control it keeps.
   li.classList.toggle('row-press', !deleted);
   li.classList.toggle('bg-surface', !deleted);
   li.classList.toggle('border-line', !deleted);
@@ -695,6 +745,8 @@ function updateItemRow(li, item) {
   cb.disabled = deleted;
   label.classList.toggle('hidden', deleted);
   del.classList.toggle('hidden', deleted);
+  restore.classList.toggle('hidden', !deleted);
+  restore.classList.toggle('flex', deleted);
   // Reorder is only wired to the active section, so a handle anywhere else would be
   // a control that quietly does nothing.
   handle.classList.toggle('hidden', deleted || done);

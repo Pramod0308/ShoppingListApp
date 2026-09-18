@@ -43,6 +43,49 @@ jobs:
             exit 1
           fi
 
+      # Runs against the bundle just rebuilt, so it exercises what would ship rather
+      # than the committed copy. Chromium only: the WebView and the Pages site are
+      # both Blink, so a second engine would double the job for no coverage.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run End-To-End Tests
+        run: npm run test:e2e
+
+  # The signalling worker is the one piece where a unit test proves little — what
+  # matters is whether a real socket gets a real relay, so the test drives a running
+  # copy. wrangler 3 cannot serve it (the WebSocket upgrade fails), hence the pin.
+  signalling:
+    name: Check signalling worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Start Worker
+        working-directory: signalling
+        run: |
+          npx --yes wrangler@4 dev --local --port 8799 > "$RUNNER_TEMP/wrangler.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if grep -q 'Ready on' "$RUNNER_TEMP/wrangler.log"; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::wrangler dev did not come up"
+          cat "$RUNNER_TEMP/wrangler.log"
+          exit 1
+
+      - name: Run Signalling Tests
+        run: npm run test:signalling
+
   build:
     name: Build Android APK
     needs: web

@@ -202,5 +202,81 @@ function seedOneItem(text = 'milk') {
   check('concurrent deletes stay deleted', item(a).get('deleted_at') !== null);
 }
 
+// 9. Restoring writes null to that same field rather than removing the key, so it is
+//    an ordinary write on one key and converges like any other. Clearing the key
+//    instead would leave the outcome to how Yjs settles a set against a delete,
+//    which is a different and much less obvious rule to rely on.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  sync(a, b);
+
+  // One device puts it back while the other, still apart, edits the text.
+  item(a).set('deleted_at', null);
+  edit(b, item(b).get('text'), 'oat milk');
+  sync(a, b);
+
+  check('a restore converges', (item(b).get('deleted_at') ?? null) === null);
+  check('a restore keeps a concurrent edit', item(a).get('text').toString() === 'oat milk');
+
+  const active = (doc) =>
+    [...doc.getMap('items').values()].filter((m) => (m.get('deleted_at') ?? null) === null);
+  check('a restored item is active on both devices',
+    active(a).length === 1 && active(b).length === 1);
+}
+
+// 10. Restoring on one device while the other deletes again. Both are writes to the
+//     same key, so they cannot both stand — what matters is that the two devices
+//     agree on which won rather than one of them keeping a row the other has lost.
+{
+  const [a, b] = pair(seedOneItem('milk'));
+  item(a).set('deleted_at', '2026-08-19T00:00:00.000Z');
+  sync(a, b);
+
+  item(a).set('deleted_at', null);
+  item(b).set('deleted_at', '2026-08-19T00:00:05.000Z');
+  sync(a, b);
+
+  check('a restore racing a delete converges',
+    (item(a).get('deleted_at') ?? null) === (item(b).get('deleted_at') ?? null),
+    `${item(a).get('deleted_at')} vs ${item(b).get('deleted_at')}`);
+  check('neither device loses the item', item(a) !== undefined && item(b) !== undefined);
+}
+
+// 11. Archiving is a field on the index entry, so it converges the same way — and
+//     the two devices holding an index are the same person's phone and laptop,
+//     which is exactly the case that has to agree. It carries no list content, so
+//     what matters is that a concurrent rename on the list itself is untouched by
+//     it: the two live in different documents on purpose.
+{
+  const entry = (doc, id = 'list-1') => doc.getMap('lists').get(id);
+  const [a, b] = pair((doc) => {
+    const map = new Y.Map();
+    doc.getMap('lists').set('list-1', map);
+    map.set('id', 'list-1');
+    map.set('secret', 'sssh');
+    map.set('order', 'a1');
+  });
+
+  entry(a).set('archived_at', '2026-09-18T00:00:00.000Z');
+  sync(a, b);
+  check('an archive reaches the other device',
+    entry(b).get('archived_at') === '2026-09-18T00:00:00.000Z');
+
+  // One device files it away again while the other takes it back out.
+  entry(a).set('archived_at', null);
+  entry(b).set('archived_at', '2026-09-18T00:00:05.000Z');
+  sync(a, b);
+  check('an unarchive racing an archive converges',
+    (entry(a).get('archived_at') ?? null) === (entry(b).get('archived_at') ?? null),
+    `${entry(a).get('archived_at')} vs ${entry(b).get('archived_at')}`);
+  check('neither device loses the list entry',
+    entry(a) !== undefined && entry(b) !== undefined);
+  // Archiving must not disturb where the list sorts, or unarchiving would drop it
+  // somewhere new rather than back where it was.
+  check('archiving leaves the order key alone',
+    entry(a).get('order') === 'a1' && entry(b).get('order') === 'a1');
+}
+
 console.log(failures === 0 ? 'doc-model: all checks passed' : `doc-model: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

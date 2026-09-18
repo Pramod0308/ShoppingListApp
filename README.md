@@ -14,6 +14,49 @@ synced peer-to-peer over WebRTC, so two devices reconcile their edits without ei
 one being authoritative and without anything passing through a server that can read
 them.
 
+## What it does
+
+Everything below works with the network switched off, which is the bar the app sets
+for itself — sync and prices are the only two things that reach outside the device,
+and both fail quietly rather than blocking the list. `tools/e2e.test.mjs` drives the
+whole of it in a browser, so this list is what the tests assert rather than what the
+UI suggests.
+
+**Lists.** Create, rename, delete, and reorder them by dragging the handle or with
+the keyboard (focus it, Space to grab, arrows to move, Space to drop). Each card
+carries its item count and how long ago it changed. The header toggles between your
+own order and most-recently-updated; the drag handle is taken out of reach in the
+latter, because a manual order you cannot see is not one worth writing.
+
+A list you are done with for now can be archived instead of deleted: it drops off
+the home screen into an Archived section, stays intact and synced, still opens, and
+comes back where it was. That is recorded against your own index rather than in the
+list, so archiving something you share with a flatmate does nothing to their home
+screen.
+
+**Items.** Add one at a time, or paste a block and get a row per line. Enter inside a
+row opens the next one, so a list can be written without going back to the composer.
+Rows are edited in place and sync per keystroke, so two people can type in the same
+row. Tick to move a row to Done; delete to move it to Deleted, which is a record
+rather than a bin — anything there can be put back where it was, and Clear is the
+only thing that removes it for good. Clear done and Clear all do the obvious thing
+to the sections above it, and are undone the same way, one row at a time.
+
+**Sharing.** Two links, meaning two different things. Share on a list copies a
+`?join=` link that hands over that one list. Link device copies a `?link=` link that
+hands over your whole index, and so every list in it. Both are adopted and stripped
+from the URL on arrival, so the secret does not linger in history. Your name and
+colour ride along in the document, so shared lists show who made what — there is no
+account behind it.
+
+**Cost estimate.** Prices what is still to buy against one of ASDA, Aldi, Morrisons
+or Sainsbury's, flags what that shop does not stock, and links each priced row to the
+listing it was matched to. See [Cost estimate](#cost-estimate) for what it costs and
+what it sends.
+
+**Everywhere.** Dark and light themes, a timestamp toggle, and both remembered. The
+web build installs as a PWA and opens offline.
+
 ## Getting started
 
 ```bash
@@ -73,14 +116,16 @@ npm test
 ```
 
 covers the ordering keys and the merge behaviour, the two parts with no visible
-symptom when they go subtly wrong.
+symptom when they go subtly wrong. [Testing](#testing) has the rest.
 
 ### Sync and sharing
 
 Each list is its own document with its own secret, and therefore its own WebRTC
-room. An index document — one per user — records each list's id, secret and
-position, and syncs in a room derived from the device secret. That split is what
-makes the two link types mean different things:
+room. An index document — one per user — records each list's id, secret, position
+and whether it is archived, and syncs in a room derived from the device secret. That
+split is what makes the two link types mean different things, and it is also why
+archiving follows you between your own devices without reaching anyone you shared a
+list with:
 
 | Link | Carries | Built from |
 | --- | --- | --- |
@@ -101,12 +146,13 @@ published.
 Documents from before the split — both the single document that held every list, and
 the plain-object shape before that — are converted on first load.
 
-**The signalling servers in `assets/www/sync-config.js` default to the public
-y-webrtc demo servers, which are frequently unreachable.** `signalling/` is a
-replacement you can run yourself — a Cloudflare Worker backed by a Durable Object,
-which is what lets every peer of a room meet in one place. Durable Objects are on
-the Workers free plan (100k requests/day), and the SQLite-backed class this uses is
-the free-tier one.
+`SIGNALING_SERVERS` in `assets/www/sync-config.js` points at the deployment of
+`signalling/` — a Cloudflare Worker backed by a Durable Object, which is what lets
+every peer of a room meet in one place. Durable Objects are on the Workers free plan
+(100k requests/day), and the SQLite-backed class this uses is the free-tier one. It
+replaced the public y-webrtc demo servers, which are run as a courtesy, carry no
+availability guarantee, and are unreachable for long stretches; if sync appears dead,
+whether this host is up is the first thing to check.
 
 ```bash
 cd signalling && npx wrangler deploy
@@ -120,15 +166,7 @@ It relays connection offers and nothing else: topics are SHA-256 digests of a ro
 secret and the offers are encrypted with that secret, so the server sees neither the
 secret nor any list content, and stores nothing.
 
-To run it locally and test it:
-
-```bash
-cd signalling && npx wrangler dev --local --port 8799
-```
-
-```bash
-node tools/signalling.test.mjs
-```
+[Testing](#testing) has how to run it locally and point the test suite at it.
 
 Sync is an enhancement, never a dependency: if it cannot start, the failure is logged
 and the app runs offline as normal.
@@ -180,30 +218,54 @@ offline. It is deliberately **not** registered on `localhost`: inside the mobile
 shell the bundle already comes off disk, and a cache in front of it would serve the
 previous build after an app update.
 
+## Testing
+
+| Command | What it covers | Needs |
+| --- | --- | --- |
+| `npm test` | Ordering keys, document merges, the price Worker's parsing | nothing |
+| `npm run test:e2e` | The whole app in a browser — see below | `npx playwright install chromium` |
+| `npm run test:signalling` | The signalling worker over a real socket | a worker running (below) |
+| `flutter test` | That the shell's asset manifest holds the whole bundle | the Flutter SDK |
+
+CI runs the first three on every push and pull request, and `flutter test` in the
+APK job.
+
+`npm run test:e2e` serves `assets/www` itself and drives Chromium over it, so there
+is nothing to start first. It is the only suite that can tell you whether pressing
+Add puts a row on the screen, whether it is still there after a reload, or whether a
+share link opens the list on the device it is sent to — the unit suites all pass
+against an app that never renders. Set `CHROMIUM_PATH` to use a browser already on
+the machine instead of Playwright's own.
+
+The signalling test needs a copy of the worker running. **wrangler 3 cannot serve
+it** — the Durable Object's WebSocket upgrade fails and every connection gets a 500:
+
+```bash
+cd signalling && npx wrangler@4 dev --local --port 8799
+npm run test:signalling
+```
+
+`SIGNAL_URL=wss://…` points it at a deployed one instead.
+
 ## Known gaps
 
-- There is no archive: deleting a list hides it in the Deleted section, and Clear
-  removes it for good. The Archive and Settings tabs that used to sit in the bottom
-  navigation were removed because nothing was behind them; the mockups for them are
-  in `design/mockups/`.
-- **The cost estimate does not currently return prices.** Reading a shop's own page
-  was measured against all four: ASDA serves a Cloudflare bot challenge, Sainsbury's
-  and Aldi return Access Denied, and Morrisons loads but ignores the search term and
-  publishes no prices in its structured data. The lookup now reports "blocked" or
-  "no price found" rather than guessing — an earlier fallback that took the first
-  £ on the page reported £1 for everything. Setting `PRICE_API_URL` to the Worker in
-  `worker/` is the route that does work.
+- There is no Settings screen. The Archive and Settings tabs that used to sit in the
+  bottom navigation were removed because nothing was behind them; archiving now
+  lives in a section on the home screen rather than behind a tab, and the mockups
+  for both are still in `design/mockups/`.
+- Deleting a list is permanent and immediate — there is no undo for it the way there
+  is for an item. Archiving is the reversible option.
+- Only the most recent deletions are listed, so a row that falls off the end of that
+  section can no longer be put back — Clear is still the only thing that removes one
+  for good, but it stops being reachable before then.
+- **Aldi returns no prices** and reports every item as not stocked, which matches its
+  barely selling groceries online in the UK. The other three work — see
+  [Cost estimate](#cost-estimate) for how that was measured. Reading the shops' own
+  pages instead was tried and removed; that section has the detail.
 - Release signing is wired to repository secrets, so a tag build fails rather than
   publishing a debug-signed APK if they are ever missing.
-
-## Licence
-
-**None. All rights reserved.**
-
-This is deliberate rather than an oversight: without a licence, default copyright
-applies and the code may not be copied, modified or redistributed, even though the
-repository is public and the app is deployed. If that should change, adding a LICENSE
-file is the only step needed.
+- The iOS target builds but has never been signed or installed on a device. CI
+  compiles it with `--no-codesign`, which proves it links and nothing more.
 
 ## Cost estimate
 
@@ -231,9 +293,7 @@ finds it for ASDA and Morrisons; Sainsbury's returns nothing when named and is f
 by a second, plain search filtered on the seller, so a miss costs one extra query and
 a hit costs one.
 
-An API key cannot ship in a static bundle, so `worker/` is a Cloudflare Worker that
-holds the key and answers one narrow question — what does this product cost at this
-shop. To deploy it:
+To deploy the Worker:
 
 ```bash
 cd worker && npx wrangler secret put SERPER_API_KEY && npx wrangler deploy
@@ -253,6 +313,13 @@ Estimates are estimates: "milk" is not a product, so each priced row shows the
 listing it was matched to, linked to that shop's search for it. The lookup's own link
 points at Google Shopping rather than the shop, so the link is built from the matched
 product name instead — on a phone that opens the shop's own app. In the app it opens
-in the system browser rather than navigating the list away. Aldi is thinly represented in shopping results because its UK
-site is largely a marketing site, so it will flag unavailable more often than the
-others.
+in the system browser rather than navigating the list away.
+
+## Licence
+
+**None. All rights reserved.**
+
+This is deliberate rather than an oversight: without a licence, default copyright
+applies and the code may not be copied, modified or redistributed, even though the
+repository is public and the app is deployed. If that should change, adding a LICENSE
+file is the only step needed.

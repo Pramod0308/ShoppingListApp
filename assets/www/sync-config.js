@@ -1,17 +1,17 @@
 // Where peers find each other.
 //
-// These are the public y-webrtc demo servers. They are run by the library's author
-// as a courtesy, carry no availability guarantee, and have been unreachable for long
-// stretches — if sync appears dead, this is the first thing to check.
+// This is the deployment of signalling/ — `cd signalling && npx wrangler deploy`
+// puts a copy of your own at wss://shopnest-signalling.<subdomain>.workers.dev.
+// If sync appears dead, whether this host is up is the first thing to check.
 //
-// Run your own instead. The y-webrtc package ships one:
+// It replaced the public y-webrtc demo servers, which are run by the library's
+// author as a courtesy, carry no availability guarantee, and have been unreachable
+// for long stretches. Falling back to them is a matter of adding them here, and
+// costs nothing but the same unreliability.
 //
-//     npx y-webrtc-signaling --port 4444
-//
-// then put your deployment's wss:// URL at the front of this list. A signalling
-// server only introduces peers: it sees a room's hash and relays connection offers
-// that are encrypted with the room secret, never the room secret itself and never
-// any list content.
+// A signalling server only introduces peers: it sees a room's hash and relays
+// connection offers that are encrypted with the room secret, never the room secret
+// itself and never any list content.
 //
 // The page's Content-Security-Policy allows wss: only. Pointing this at a plaintext
 // ws:// server for local testing means relaxing connect-src in index.html to match.
