@@ -122,31 +122,85 @@ async function shoppingFor(q, apiKey) {
   return res;
 }
 
-async function findListing(q, store, apiKey) {
+// Words that appear in half the grocery aisle and so distinguish nothing. Left in,
+// they make a listing look like a better match than it is.
+const FILLER = new Set(['the', 'and', 'with', 'for', 'from', 'pack', 'fresh', 'new']);
+
+// The parts of a search worth matching on: "apetina paneer" -> ["apetina","paneer"].
+// Short words go because they are mostly units and articles, and a one- or two-letter
+// substring matches almost any title by accident.
+function terms(text) {
+  return [...new Set(
+    String(text ?? '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3 && !FILLER.has(t)),
+  )];
+}
+
+// Which of those a listing's title does not contain. Substring rather than whole
+// word, so "egg" still matches "Eggs" and "tomato" matches "Tomatoes".
+function missingFrom(title, wanted) {
+  const have = String(title ?? '').toLowerCase();
+  return wanted.filter((t) => !have.includes(t));
+}
+
+// The best listing this shop has for what was actually asked for.
+//
+// Taking the first listing from the right shop is what made a search for "Apetina
+// Paneer" come back with the shop's own-brand paneer at every one of them: the
+// filter only ever asked "is this ASDA's?", never "is this the product?". Google
+// ranks by its own idea of relevance, and a shop's own brand routinely outranks the
+// brand someone typed. So every candidate from that shop is scored on how much of
+// the search it actually contains, and the best-matching one wins rather than the
+// first.
+async function findListing(q, store, apiKey, wanted) {
   const res = await shoppingFor(q, apiKey);
   if (!res.ok) return { error: `lookup failed (${res.status})` };
   const data = await res.json();
   const results = Array.isArray(data.shopping) ? data.shopping : [];
+
   // The store filter is what produces the availability answer: no listing from that
   // seller means it is not sold there, which is a result rather than a failure.
-  const hit = results.find((r) => matchesStore(r, store) && parsePrice(r.price) !== null);
-  return { hit };
+  let hit = null;
+  let missing = null;
+  for (const r of results) {
+    if (!matchesStore(r, store) || parsePrice(r.price) === null) continue;
+    const gaps = missingFrom(r.title, wanted);
+    // Ties go to the earlier listing, which is the one Google ranked higher.
+    if (!hit || gaps.length < missing.length) {
+      hit = r;
+      missing = gaps;
+      if (gaps.length === 0) break;
+    }
+  }
+  return { hit, missing: missing ?? wanted };
 }
 
 async function priceFor(query, store, apiKey) {
   const label = STORE_LABELS[store] ?? store;
+  const wanted = terms(query);
 
   // Naming the shop usually gets its own listings straight away. Sainsbury's is the
   // exception: it returns nothing when named, but shows up as sainsburys.co.uk in a
-  // plain search — so a miss falls back to searching the product alone and filtering
-  // the sellers. The second call only happens on a miss.
-  let { hit, error } = await findListing(`${query} ${label}`, store, apiKey);
-  if (error) return { query, error };
+  // plain search.
+  const first = await findListing(`${query} ${label}`, store, apiKey, wanted);
+  if (first.error) return { query, error: first.error };
 
-  if (!hit) {
-    const plain = await findListing(query, store, apiKey);
-    if (plain.error) return { query, error: plain.error };
-    hit = plain.hit;
+  let { hit, missing } = first;
+
+  // A second pass on a miss, and also on a near miss. Adding the shop's name to the
+  // query pushes its own-brand products up the results, which is exactly the wrong
+  // thing when the search names a brand — searching the product on its own is what
+  // surfaces "Apetina Paneer" rather than "ASDA Paneer". It only costs a second
+  // search when the first pass did not find everything asked for.
+  if (!hit || missing.length > 0) {
+    const plain = await findListing(query, store, apiKey, wanted);
+    if (plain.error && !hit) return { query, error: plain.error };
+    if (plain.hit && (!hit || plain.missing.length < missing.length)) {
+      hit = plain.hit;
+      missing = plain.missing;
+    }
   }
 
   if (!hit) return { query, unavailable: true };
@@ -157,6 +211,10 @@ async function priceFor(query, store, apiKey) {
     currency: 'GBP',
     title: hit.title ?? query,
     source: hit.source ?? store,
+    // What the shop's listing does not have. A shop that sells its own paneer but
+    // not Apetina's would otherwise quote a price for a different product without
+    // ever saying so; this is what lets the table mark it as the near miss it is.
+    missing,
     // Which listing this price came from, so it can be opened and checked.
     link: typeof hit.link === 'string' ? hit.link : null,
   };

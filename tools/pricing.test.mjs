@@ -223,7 +223,89 @@ for (const gone of ['aldi', 'lidl']) {
     (await res.json()).error.includes('tesco'));
 }
 
-// 12. Resolving a product's own page.
+// 12. Matching the product, not just the shop.
+//
+//     Taking the first listing from the right shop is how "Apetina Paneer" came back
+//     as the shop's own-brand paneer at every one of them. Google ranks by its own
+//     idea of relevance and a shop's own brand routinely outranks the brand someone
+//     typed, so the filter has to ask whether the listing is the product as well as
+//     whether it is the shop's.
+{
+  stubSerper([
+    { title: 'ASDA Paneer 200g', source: 'ASDA', price: '£1.76' },
+    { title: 'Apetina Paneer 200g', source: 'ASDA', price: '£2.25' },
+  ]);
+  const body = await (await call({ store: 'asda', items: ['Apetina Paneer'] })).json();
+  const [first] = body.results;
+  check('the branded listing wins over the own brand above it',
+    first.title === 'Apetina Paneer 200g', JSON.stringify(first));
+  check('and its price is the one quoted', first.price === 2.25);
+  check('a full match reports nothing missing', first.missing.length === 0, JSON.stringify(first.missing));
+}
+{
+  // The shop really does not stock it. The price is still worth showing — but as the
+  // near miss it is, not as though it were what was asked for.
+  stubSerper([{ title: 'ASDA Paneer 200g', source: 'ASDA', price: '£1.76' }]);
+  const body = await (await call({ store: 'asda', items: ['Apetina Paneer'] })).json();
+  const [first] = body.results;
+  check('a near miss is still priced', first.price === 1.76);
+  check('and names what it could not find', first.missing.join(',') === 'apetina',
+    JSON.stringify(first.missing));
+}
+{
+  // Naming the shop pushes its own brand up the results, so a near miss is worth a
+  // plain search — that is where the branded listing shows up.
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const { q } = JSON.parse(init.body);
+    calls++;
+    const shopping = /asda/i.test(q)
+      ? [{ title: 'ASDA Paneer 200g', source: 'ASDA', price: '£1.76' }]
+      : [{ title: 'Apetina Paneer 200g', source: 'ASDA', price: '£2.25' }];
+    return new Response(JSON.stringify({ shopping }), { status: 200 });
+  };
+  const body = await (await call({ store: 'asda', items: ['Apetina Paneer'] })).json();
+  check('a near miss is retried without the shop name', body.results[0].title === 'Apetina Paneer 200g',
+    JSON.stringify(body.results[0]));
+  check('and that costs one extra search, not more', calls === 2, `calls=${calls}`);
+}
+{
+  // The common case must not get dearer: a first pass that found everything asked
+  // for is not searched again.
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ shopping: [
+      { title: 'Tesco Semi Skimmed Milk 2.27L', source: 'Tesco', price: '£1.45' },
+    ] }), { status: 200 });
+  };
+  const body = await (await call({ store: 'tesco', items: ['semi skimmed milk'] })).json();
+  check('an exact match costs a single search', calls === 1, `calls=${calls}`);
+  check('and reports nothing missing', body.results[0].missing.length === 0);
+}
+{
+  // Short words are units and articles; matching on them would make any title look
+  // like a match. "1L" and "of" must not count towards the score.
+  stubSerper([
+    { title: 'Tesco Semi Skimmed Milk 1L', source: 'Tesco', price: '£1.10' },
+    { title: 'Tesco Oat Milk 1L', source: 'Tesco', price: '£1.20' },
+  ]);
+  const body = await (await call({ store: 'tesco', items: ['oat milk 1L'] })).json();
+  check('the product decides the match, not the unit',
+    body.results[0].title === 'Tesco Oat Milk 1L', JSON.stringify(body.results[0]));
+}
+{
+  // A plural in the listing against a singular in the search is the same product.
+  stubSerper([
+    { title: 'Tesco Baking Potatoes 4 Pack', source: 'Tesco', price: '£1.50' },
+    { title: 'Tesco Tomatoes 6 Pack', source: 'Tesco', price: '£0.95' },
+  ]);
+  const body = await (await call({ store: 'tesco', items: ['tomato'] })).json();
+  check('a singular search matches the plural listing',
+    body.results[0].title === 'Tesco Tomatoes 6 Pack', JSON.stringify(body.results[0]));
+}
+
+// 13. Resolving a product's own page.
 //
 //     The shopping API cannot answer this: every listing it returns links to
 //     google.com/search. A tapped price that lands on a search engine is the bug

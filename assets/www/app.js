@@ -323,8 +323,8 @@ async function estimateCost() {
 // The headline above the table: which shop wins, and by how much. Shared with the
 // restore path, because a table that comes back without the sentence that explains
 // it has only half survived the trip to the home screen.
-function showComparisonSummary(items) {
-  const { rows, best, complete } = compareStores(items, priceMatrix);
+function showComparisonSummary(items, byStore = priceMatrix) {
+  const { rows, best, complete } = compareStores(items, byStore);
   const winner = rows.find((r) => r.store === best);
 
   if (!winner) {
@@ -351,6 +351,13 @@ function showComparisonSummary(items) {
     const saving = dearest.total - winner.total;
     if (saving > 0) parts.push(`${formatMoney(saving)} less than ${dearest.label}`);
   }
+
+  // A basket is only cheapest for what you asked for if that is what is in it. A
+  // shop's own paneer undercutting the brand you searched for is how it wins here
+  // without stocking the product at all, so the headline says when that is why.
+  const near = items.filter((i) => byStore.get(best)?.get(i.id)?.missing?.length).length;
+  if (near) parts.push(`${near === 1 ? '1 price is' : `${near} prices are`} the closest match, not exact`);
+
   setSummary(parts.join(' · '));
 }
 
@@ -431,17 +438,21 @@ function restoreMatrix() {
 function matrixCell(item, storeId, cheapest) {
   const result = priceMatrix.get(storeId)?.get(item.id);
   const td = document.createElement('td');
-  td.className = 'px-1 py-1.5 text-right tabular-nums whitespace-nowrap border-t border-line';
+  // No minimum width: fitting every shop on the screen at once is the point of the
+  // table, and a column wide enough for a whole product name pushed the last shop
+  // off a phone. The name below the price wraps and clips instead; the full one is
+  // in the cell's tooltip.
+  td.className = 'px-1 py-1.5 text-right tabular-nums align-top border-t border-line';
 
   if (!result || result.error) {
     td.textContent = '—';
-    td.className += ' text-faint';
+    td.className += ' text-faint whitespace-nowrap';
     td.title = result?.error ? `Could not check: ${result.error}` : 'Not checked';
     return td;
   }
   if (result.unavailable) {
     td.textContent = 'n/a';
-    td.className += ' text-faint';
+    td.className += ' text-faint whitespace-nowrap';
     td.title = 'Not stocked here';
     return td;
   }
@@ -450,21 +461,42 @@ function matrixCell(item, storeId, cheapest) {
   const isCheapest = cheapest && cheapest.store === storeId;
   const href = productUrl(storeId, result);
   const cell = document.createElement(href ? 'a' : 'span');
-  cell.textContent = formatMoney(result.price);
-  // Every price opens that shop's search for the matched product, so every price is
+  cell.className = 'block';
+
+  const amount = document.createElement('span');
+  amount.textContent = formatMoney(result.price);
+  // Every price opens that shop's page for the matched product, so every price is
   // marked as something you can tap. Hover is not a thing on a phone, so the
   // underline is always on rather than appearing when a mouse arrives.
-  cell.className = 'underline decoration-dotted underline-offset-2 '
+  amount.className = 'block whitespace-nowrap underline decoration-dotted underline-offset-2 '
     + (isCheapest ? 'font-semibold text-accent decoration-accent' : 'text-ink decoration-faint');
+  cell.appendChild(amount);
+
+  // What each shop is actually selling you. "Paneer" is not a product, and four
+  // shops' prices for four different paneers is not a comparison — the prices only
+  // mean something next to the thing each one is for.
+  const shortfall = result.missing?.length ? result.missing : null;
+  if (result.title) {
+    const name = document.createElement('span');
+    name.textContent = result.title;
+    // A near miss is marked rather than dropped: the price is still worth seeing,
+    // but not as though it were what was asked for.
+    name.className = 'text-[10px] leading-tight font-normal line-clamp-2 '
+      + (shortfall ? 'text-danger italic' : 'text-faint');
+    cell.appendChild(name);
+  }
+
+  const shopLabel = STORES.find((s) => s.id === storeId)?.label ?? storeId;
+  cell.title = shortfall
+    ? `${result.title} — the closest ${shopLabel} stocks; no “${shortfall.join('”, “')}” in its listings`
+    : `${result.title} — open at ${shopLabel}`;
   if (href) {
     cell.href = href;
     cell.target = '_blank';
     cell.rel = 'noopener noreferrer';
-    cell.title = `${result.title} — open at ${STORES.find((s) => s.id === storeId)?.label ?? storeId}`;
     cell.onclick = (e) => openProductPage(e, storeId, result);
-  } else {
-    cell.title = result.title ?? '';
   }
+
   td.appendChild(cell);
   if (isCheapest) td.className += ' bg-accent-soft';
   return td;
@@ -945,14 +977,10 @@ function createItemRow(item) {
   const meta = document.createElement('span');
   meta.className = 'metaRow text-[11px] text-faint leading-tight mt-0.5 truncate';
 
-  // Which listing a price came from. Hidden until there is one, because "milk" is
-  // not a product and the match is the only way to judge whether the price is right.
-  const matched = document.createElement('a');
-  matched.className = 'hidden text-[11px] text-accent leading-tight mt-0.5 truncate hover:underline';
-  matched.target = '_blank';
-  matched.rel = 'noopener noreferrer';
-
-  textContainer.append(text, meta, matched);
+  // Which listing a price came from used to sit here, under the item. It belongs in
+  // the matrix instead: one row showing only the selected shop's match cannot be
+  // compared with anything, and the same four products are what the table is for.
+  textContainer.append(text, meta);
   row.append(label, textContainer);
 
   const rightContainer = document.createElement('div');
@@ -996,12 +1024,12 @@ function createItemRow(item) {
   rightContainer.append(mobileMeta, dot, price, actionsContainer);
 
   li.append(row, rightContainer);
-  li.refs = { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched };
+  li.refs = { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price };
   return li;
 }
 
 function updateItemRow(li, item) {
-  const { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price, matched } = li.refs;
+  const { cb, text, meta, mobileMeta, del, restore, handle, label, dot, price } = li.refs;
   const done = item.done;
   const deleted = item.deleted;
 
@@ -1055,24 +1083,6 @@ function updateItemRow(li, item) {
   dot.title = author ? `Added by ${author.name}` : '';
 
   const quote = prices.get(item.id);
-  const priced = quote && !quote.error && !quote.unavailable && !deleted;
-
-  // The product name, linked to the listing it was priced from.
-  matched.classList.toggle('hidden', !priced || !quote.title);
-  if (priced && quote.title) {
-    matched.textContent = quote.title;
-    const href = productUrl(storeSelectEl?.value, quote);
-    const shop = STORES.find((x) => x.id === storeSelectEl?.value)?.label ?? 'the shop';
-    if (href) {
-      matched.href = href;
-      matched.title = `Open this product at ${shop}`;
-      matched.onclick = (e) => openProductPage(e, storeSelectEl?.value, quote);
-    } else {
-      matched.removeAttribute('href');
-      matched.onclick = null;
-      matched.title = quote.source ?? '';
-    }
-  }
 
   if (!quote || deleted) {
     price.classList.add('hidden');
@@ -1092,7 +1102,9 @@ function updateItemRow(li, item) {
     } else {
       price.textContent = formatMoney(quote.price);
       price.className = price.className.replace(/text-(ink|faint|danger)/g, '') + ' text-ink';
-      price.title = `${quote.title} — ${quote.source}`;
+      price.title = quote.missing?.length
+        ? `${quote.title} — the closest match, not what you asked for`
+        : `${quote.title} — ${quote.source}`;
     }
   }
 
