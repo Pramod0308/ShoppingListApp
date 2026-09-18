@@ -223,5 +223,83 @@ for (const gone of ['aldi', 'lidl']) {
     (await res.json()).error.includes('tesco'));
 }
 
+// 12. Resolving a product's own page.
+//
+//     The shopping API cannot answer this: every listing it returns links to
+//     google.com/search. A tapped price that lands on a search engine is the bug
+//     this path exists to fix, so what it must never do is hand back a link that is
+//     not the shop's own page.
+function stubSearch(organic) {
+  globalThis.fetch = async () => new Response(JSON.stringify({ organic }), { status: 200 });
+}
+
+{
+  stubSearch([
+    { title: 'Semi Skimmed Milk 2.27L - Groceries', link: 'https://www.tesco.com/groceries/en-GB/products/254656543' },
+  ]);
+  const body = await (await call({ store: 'tesco', product: 'Tesco Semi Skimmed Milk' })).json();
+  check('resolves a product page at the shop',
+    body.url === 'https://www.tesco.com/groceries/en-GB/products/254656543', JSON.stringify(body));
+}
+{
+  // Google pads a thin `site:` result set with pages from elsewhere. One of those
+  // opened as "the product at Tesco" would be a plain lie about where to buy it.
+  stubSearch([
+    { title: 'Milk price comparison', link: 'https://www.trolley.co.uk/product/tesco-milk/ABC' },
+    { title: 'Tesco Semi Skimmed Milk', link: 'https://www.tesco.com/groceries/en-GB/products/1234' },
+  ]);
+  const body = await (await call({ store: 'tesco', product: 'milk' })).json();
+  check('a result from another site is not the shop\'s product page',
+    body.url === 'https://www.tesco.com/groceries/en-GB/products/1234', String(body.url));
+}
+{
+  // On-site but not a product: a category page beats a search box, and is what the
+  // shop itself ranked first for this product.
+  stubSearch([
+    { title: 'Fresh Milk', link: 'https://www.tesco.com/groceries/en-GB/shop/fresh-food/milk' },
+  ]);
+  const body = await (await call({ store: 'tesco', product: 'milk' })).json();
+  check('falls back to the shop\'s own top hit when no product page is found',
+    body.url === 'https://www.tesco.com/groceries/en-GB/shop/fresh-food/milk', String(body.url));
+}
+{
+  // A product page anywhere in the results beats a non-product page above it.
+  stubSearch([
+    { title: 'Help', link: 'https://www.sainsburys.co.uk/help/delivery' },
+    { title: 'British Semi Skimmed Milk', link: 'https://www.sainsburys.co.uk/gol-ui/product/sainsburys-british-semi-skimmed-milk' },
+  ]);
+  const body = await (await call({ store: 'sainsburys', product: 'milk' })).json();
+  check('a product page outranks a higher non-product one',
+    body.url.includes('/gol-ui/product/'), String(body.url));
+}
+{
+  stubSearch([{ title: 'Milk', link: 'https://www.ocado.com/products/milk' }]);
+  const body = await (await call({ store: 'asda', product: 'milk' })).json();
+  check('nothing on the shop\'s site resolves to no url', body.url === null, JSON.stringify(body));
+}
+{
+  stubSearch([]);
+  const bad = await call({ store: 'tesco', product: '   ' });
+  check('an empty product name is refused', bad.status === 400);
+}
+{
+  globalThis.fetch = async () => new Response('nope', { status: 500 });
+  const res = await call({ store: 'tesco', product: 'milk' });
+  check('a failed search is an error, not a bad link', res.status === 502);
+}
+{
+  // The resolve path must not fall through into a price lookup it has no items for.
+  let searched = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/search')) searched++;
+    return new Response(JSON.stringify({ organic: [
+      { title: 'Milk', link: 'https://groceries.asda.com/product/milk/123' },
+    ] }), { status: 200 });
+  };
+  const body = await (await call({ store: 'asda', product: 'milk', items: ['milk'] })).json();
+  check('resolving costs one search and no shopping lookups', searched === 1, `searched=${searched}`);
+  check('and answers with the url rather than prices', body.url !== undefined && body.results === undefined);
+}
+
 console.log(failures === 0 ? 'pricing: all checks passed' : `pricing: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

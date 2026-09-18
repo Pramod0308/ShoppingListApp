@@ -29,6 +29,19 @@ export const STORES = [
 const CACHE_KEY = 'shopnest-prices';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Resolved product pages, kept far longer than prices: a product's URL changes when
+// the shop restructures its site, which is rare, while its price changes weekly.
+// A miss is remembered too, briefly, so a product the shop does not have a page for
+// is not re-searched on every tap.
+const LINK_CACHE_KEY = 'shopnest-product-urls';
+const LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LINK_MISS_TTL_MS = 24 * 60 * 60 * 1000;
+
+// The last matrix generated for each list, so leaving a list and coming back does
+// not throw away an estimate that cost real searches to produce.
+const MATRIX_KEY = 'shopnest-matrix';
+const MATRIX_KEEP = 10;
+
 export const isConfigured = () => Boolean(PRICE_API_URL);
 
 /// Where a lookup would go, for messages the user reads.
@@ -38,21 +51,24 @@ export const sourceName = () => (PRICE_API_URL ? 'the price service' : null);
 const normalise = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
 const cacheKey = (text, store) => `${store}|${normalise(text)}`;
 
-function readCache() {
+function readStore(key) {
   try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}');
+    return JSON.parse(localStorage.getItem(key) ?? '{}');
   } catch {
     return {};
   }
 }
 
-function writeCache(cache) {
+function writeStore(key, value) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Storage full or blocked: losing the cache costs credits, not correctness.
   }
 }
+
+const readCache = () => readStore(CACHE_KEY);
+const writeCache = (cache) => writeStore(CACHE_KEY, cache);
 
 /// Prices a list of `{ id, text }`. Returns a Map of item id -> result, where a
 /// result is `{ price, title, source }`, `{ unavailable: true }` or `{ error }`.
@@ -178,16 +194,145 @@ async function lookup(items, store) {
   return res.json();
 }
 
+/* ---------- Keeping an estimate ----------
+
+   A matrix is expensive: four shops, one search per item each, and more when a shop
+   needs the fallback query. Throwing it away because someone went back to the home
+   screen means paying for it again. It is saved per list, and a list only ever sees
+   its own.
+
+   It lives in localStorage rather than in the synced document on purpose. Prices are
+   not list data — they are one person's lookup at one moment, and syncing them would
+   push someone else's stale estimate onto everybody's screen. */
+
+/// Serialises `byStore` (store id -> Map of item id -> result) alongside the items
+/// it was generated for, so freshness can be judged when it is read back.
+export function saveMatrix(listId, items, byStore) {
+  if (!listId) return;
+  const all = readStore(MATRIX_KEY);
+  const stores = {};
+  for (const [storeId, prices] of byStore) stores[storeId] = Object.fromEntries(prices);
+  all[listId] = {
+    at: Date.now(),
+    items: items.map((i) => ({ id: i.id, text: i.text })),
+    stores,
+  };
+
+  // Bound the growth: a device that has opened many shared lists should not carry
+  // every estimate it has ever run. Newest first, and the one just saved counts as
+  // newest whatever the clock says — two saves inside the same millisecond tie on
+  // `at`, and the tie must not be settled by evicting the estimate being written.
+  const ids = Object.keys(all).sort((a, b) => {
+    if (a === listId) return -1;
+    if (b === listId) return 1;
+    return (all[b]?.at ?? 0) - (all[a]?.at ?? 0);
+  });
+  for (const id of ids.slice(MATRIX_KEEP)) delete all[id];
+
+  writeStore(MATRIX_KEY, all);
+}
+
+/// The saved matrix for a list, as `{ at, items, byStore }`, or null.
+export function loadMatrix(listId) {
+  if (!listId) return null;
+  const saved = readStore(MATRIX_KEY)[listId];
+  if (!saved || !Array.isArray(saved.items) || !saved.stores) return null;
+  const byStore = new Map();
+  for (const [storeId, prices] of Object.entries(saved.stores)) {
+    byStore.set(storeId, new Map(Object.entries(prices)));
+  }
+  return { at: saved.at ?? 0, items: saved.items, byStore };
+}
+
+/// Drops a list's saved estimate. Called when the list itself goes.
+export function forgetMatrix(listId) {
+  const all = readStore(MATRIX_KEY);
+  if (!(listId in all)) return;
+  delete all[listId];
+  writeStore(MATRIX_KEY, all);
+}
+
+/// Whether a matrix still describes the list in front of you.
+///
+/// An estimate is a photograph, not a live reading: add an item, rename one, or tick
+/// one off and the table is answering a question that is no longer being asked. This
+/// says exactly how it has drifted so the UI can name it rather than leaving someone
+/// to compare the rows by eye.
+export function matrixFreshness(pricedItems, currentItems) {
+  const was = new Map(pricedItems.map((i) => [i.id, i.text]));
+  const now = new Map(currentItems.map((i) => [i.id, i.text]));
+
+  let added = 0;
+  let renamed = 0;
+  for (const [id, text] of now) {
+    if (!was.has(id)) added++;
+    else if (was.get(id) !== text) renamed++;
+  }
+  const removed = [...was.keys()].filter((id) => !now.has(id)).length;
+
+  return { fresh: added === 0 && removed === 0 && renamed === 0, added, removed, renamed };
+}
+
+/// The ids in a priced matrix that are no longer on the list, so those rows can be
+/// shown for what they are rather than as current prices.
+export function goneFromList(pricedItems, currentItems) {
+  const now = new Set(currentItems.map((i) => i.id));
+  return new Set(pricedItems.filter((i) => !now.has(i.id)).map((i) => i.id));
+}
+
+/* ---------- The product's own page ---------- */
+
+/// Asks the worker for the page this product has at this shop.
+///
+/// Costs one search, so it is called when someone taps a price rather than for every
+/// cell. Answers are cached for a month; a product with no page of its own is
+/// remembered as such for a day so tapping it again is not another search.
+///
+/// Returns null rather than throwing: the caller always has the shop's search page
+/// to fall back on, and a failed lookup should cost a less precise link, not an error.
+export async function resolveProductUrl(store, title) {
+  if (!isConfigured() || !title) return null;
+
+  const key = `${store}|${normalise(title)}`;
+  const cache = readStore(LINK_CACHE_KEY);
+  const hit = cache[key];
+  if (hit) {
+    const ttl = hit.url ? LINK_TTL_MS : LINK_MISS_TTL_MS;
+    if (Date.now() - hit.at < ttl) return hit.url;
+  }
+
+  if (!navigator.onLine) return null;
+
+  let url = null;
+  try {
+    const res = await fetch(PRICE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ store, product: title }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    url = typeof body.url === 'string' ? body.url : null;
+  } catch {
+    return null;
+  }
+
+  cache[key] = { at: Date.now(), url };
+  writeStore(LINK_CACHE_KEY, cache);
+  return url;
+}
+
 // Where to send someone who taps a matched product.
 //
-// Serper's own `link` goes to Google Shopping, not the shop — following it lands on
-// a Google results page rather than the item. These search the shop's own site for
-// the exact product the price came from, which on a phone opens that shop's app,
-// because the apps claim these links.
+// Serper's own `link` goes to Google Shopping, not the shop — confirmed against the
+// live API, every listing it returns links to google.com/search, never to the
+// retailer. So a tapped price resolves the product's own page through
+// resolveProductUrl, and these are the fallback for when that finds nothing, is
+// offline, or has not answered yet.
 //
-// Confirmed against the live API: every listing Serper returns links to
-// google.com/search, never to the shop, so without these a price would open a
-// search engine rather than the product.
+// A search on the shop's own site for the exact product the price came from is a
+// near miss rather than a wrong answer, and on a phone it still opens that shop's
+// app, because the apps claim these links.
 const STORE_SEARCH = {
   asda: (q) => `https://groceries.asda.com/search/${encodeURIComponent(q)}`,
   sainsburys: (q) => `https://www.sainsburys.co.uk/gol-ui/SearchResults/${encodeURIComponent(q)}`,
@@ -195,8 +340,9 @@ const STORE_SEARCH = {
   tesco: (q) => `https://www.tesco.com/groceries/en-GB/search?query=${encodeURIComponent(q)}`,
 };
 
-/// The best link for a priced result: the shop's own search for the matched product,
-/// falling back to whatever the lookup gave us.
+/// The link a price carries before anything is resolved: the shop's own search for
+/// the matched product, falling back to whatever the lookup gave us. Following it
+/// upgrades to the product's own page — see resolveProductUrl.
 export function productUrl(store, result) {
   if (!result || result.error || result.unavailable) return null;
   const build = STORE_SEARCH[store];

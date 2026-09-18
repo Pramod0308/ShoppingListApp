@@ -42,6 +42,13 @@ rather than a bin — anything there can be put back where it was, and Clear is 
 only thing that removes it for good. Clear done and Clear all do the obvious thing
 to the sections above it, and are undone the same way, one row at a time.
 
+**Who added what.** Every row says who put it there and when — `Added by Priya 2m
+ago` — from the name in the profile button, which rides along in the document rather
+than in any account. On a shared list each person also gets a colour, shown as a dot
+on the rows they added. Names are self-asserted: anyone holding a share link can
+already edit everything in the list, so this is honest labelling among people who
+trust each other, not proof of identity.
+
 **Sharing.** Two links, meaning two different things. Share on a list copies a
 `?join=` link that hands over that one list. Link device copies a `?link=` link that
 hands over your whole index, and so every list in it. Both are adopted and stripped
@@ -52,10 +59,17 @@ account behind it.
 **Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
 Morrisons, Sainsbury's and Tesco — and lays them out as a matrix: a row per item, a
 column per shop, the cheapest shop for each item picked out, and a row of totals with
-the cheapest basket picked out. Every price links to that shop's own search for the
-product it was matched to. Anything a shop does not stock reads `n/a`; anything that
-could not be checked reads `—`. See [Cost estimate](#cost-estimate) for what that
-costs and what it sends.
+the cheapest basket picked out. Tapping a price opens that product's own page at that
+shop. Anything a shop does not stock reads `n/a`; anything that could not be checked
+reads `—`.
+
+An estimate stays put: it is saved against its list, so leaving for the home screen
+and coming back shows it again without spending another search. Because it is a
+photograph rather than a live reading, a line above the table says whether it still
+matches the list — `Up to date`, or `Out of date · 2 added, 1 removed since` — and a
+row priced for something no longer on the list is struck through rather than left
+looking current. See [Cost estimate](#cost-estimate) for what that costs and what it
+sends.
 
 **Everywhere.** Dark and light themes, a timestamp toggle, and both remembered. The
 web build installs as a PWA and opens offline.
@@ -271,6 +285,14 @@ npm run test:signalling
   that; see [Cost estimate](#cost-estimate).
   Reading the shops' own pages instead was tried and removed; that section has the
   detail.
+- **Product-page resolution has only been tested against stubs.** The Worker's
+  `product` path is covered by `tools/pricing.test.mjs` for what it does with a
+  result set, and the tap-through by `tools/e2e.test.mjs` — but no test has seen what
+  Google actually returns for `"<product> site:tesco.com"`, because the sandbox this
+  was built in cannot reach either. How often it lands on the product rather than a
+  category page is therefore unmeasured. Tapping a few prices after a deploy is the
+  check; the fallback to the shop's search means a bad answer is a less precise link
+  rather than a broken one.
 - Release signing is wired to repository secrets, so a tag build fails rather than
   publishing a debug-signed APK if they are ever missing.
 - The iOS target builds but has never been signed or installed on a device. CI
@@ -284,9 +306,25 @@ it is comparison rather than a single number.
 
 **That costs about four times the credits of a single-shop estimate** — one request
 per shop, and Sainsbury's needs a second query when naming the shop finds nothing.
-The per (item, shop) cache in `assets/www/pricing.js` is what makes it bearable:
-answers are held for 7 days, so looking at the same list again, or switching which
-shop the rows show, costs nothing at all.
+Three things keep that bearable, all in `assets/www/pricing.js`:
+
+- answers are cached per (item, shop) for 7 days, so looking at the same list again,
+  or switching which shop the rows show, costs nothing at all;
+- the matrix itself is saved per list under `shopnest-matrix`, so leaving the list
+  and coming back redraws the saved answer rather than buying it again — the ten most
+  recent lists are kept, and a deleted list takes its estimate with it;
+- a product's own page is only looked up when someone actually taps a price, not for
+  every cell of the table.
+
+Saved prices are kept out of the synced document deliberately. They are one person's
+lookup at one moment, and syncing them would push a stale estimate onto everyone
+else's screen.
+
+Because a saved estimate can go on being displayed long after the list has moved on,
+`matrixFreshness` compares the items it was generated for against the list as it is
+now and the table says which it is. Renaming an item counts: same ids, same count,
+different products — comparing lengths alone would call that fresh and quote the
+price of something else entirely.
 
 Picking the winner is not simply the smallest total. A shop that stocks none of your
 list totals £0.00, which beats every real shop — and Aldi returns nothing, so that is
@@ -351,10 +389,22 @@ store for 7 days in `localStorage`, so re-estimating the same list costs nothing
 works offline.
 
 Estimates are estimates: "milk" is not a product, so each priced row shows the
-listing it was matched to, linked to that shop's search for it. The lookup's own link
-points at Google Shopping rather than the shop, so the link is built from the matched
-product name instead — on a phone that opens the shop's own app. In the app it opens
-in the system browser rather than navigating the list away.
+listing it was matched to, and tapping it opens that product at that shop.
+
+Getting there takes a second lookup. Every link the shopping API returns points at
+`google.com/search` rather than at the retailer — measured, not assumed — so the
+Worker answers a separate question, "where does this product live at this shop", with
+a web search restricted to that shop's own domain, and prefers a result under its
+product path. That costs one search, which is why it happens on a tap rather than for
+every cell: resolving the whole matrix up front would buy a search for every
+(item, shop) pair whether or not anyone ever followed one. Answers are cached for 30
+days, since a product URL changes when a shop rebuilds its site, not every week.
+
+The link on the page is the shop's own search for the matched product, so it works
+with the lookup down, offline, or before the resolve has answered — the tab opens
+first and lands on the product if it is found, on that search if it is not. On a
+phone either one opens the shop's own app, because the apps claim these links; in the
+app they open in the system browser rather than navigating the list away.
 
 ## Licence
 

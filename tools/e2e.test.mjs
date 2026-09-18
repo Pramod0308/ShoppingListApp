@@ -77,6 +77,10 @@ const blocked = [];
 // Set to a (store, items) => payload function to answer the price Worker from a
 // fixture; null leaves it blocked, which is the offline path the app must survive.
 let priceFixture = null;
+// The same, for "where is this product's page" — and a record of every such ask, so
+// the test can prove the click resolved rather than just guessing a URL.
+let productFixture = null;
+const resolveAsks = [];
 
 async function openPage(context) {
   const page = await context.newPage();
@@ -84,7 +88,9 @@ async function openPage(context) {
   page.on('console', (m) => {
     if (m.type() === 'error' && !OFFLINE_NOISE.test(m.text())) pageErrors.push(m.text());
   });
-  await page.route('**/*', (route) => {
+  // Routed on the context rather than the page: following a price opens a new tab,
+  // and a page-level route would let that tab reach the real internet.
+  await context.route('**/*', (route) => {
     const url = route.request().url();
     if (url.startsWith(BASE) || url.startsWith('data:') || url.startsWith('blob:')) {
       return route.continue();
@@ -96,6 +102,17 @@ async function openPage(context) {
     // packet leaving the browser — so the matrix is tested against known numbers.
     if (priceFixture && /workers\.dev/.test(url)) {
       const body = JSON.parse(route.request().postData() ?? '{}');
+      // Following a price asks the same Worker a different question: where is this
+      // product's own page. Answered from the fixture so the click can be tested
+      // without a search credit or a packet.
+      if (typeof body.product === 'string') {
+        resolveAsks.push(body);
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ url: productFixture ? productFixture(body.store, body.product) : null }),
+        });
+      }
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -526,6 +543,14 @@ await settle(500);
 await page.click('#estimateBtn');
 await settle(3000);
 
+// Who put each row there. It used to appear only once a list had two people in it,
+// which left the rows added before anyone joined anonymous on exactly the lists
+// where it matters.
+check('each item names who added it',
+  (await page.$$eval('#list li .metaRow', (m) => m.map((x) => x.textContent)))
+    .every((t) => /Added by Pramod/.test(t)),
+  (await page.$$eval('#list li .metaRow', (m) => m.map((x) => x.textContent))).join(' | '));
+
 check('the matrix appears', await page.isVisible('#priceMatrix'));
 check('it has a column per shop',
   (await page.$$eval('#matrixHead th', (h) => h.length)) === STORES.length + 1,
@@ -589,10 +614,140 @@ check('switching shop costs no further lookups', blocked.length === beforeSwitch
 check('and the rows now show that shop',
   (await page.textContent('#list')).includes('£0.80'), 'expected Tesco milk at £0.80');
 
+/* ---------- following a price to the product's own page ---------- */
+
+// The price on screen links to the shop's search. Tapping it should land on the
+// product itself, which takes a lookup the matrix deliberately does not do up front.
+productFixture = (store, product) =>
+  `${BASE}product-page?shop=${store}&product=${encodeURIComponent(product)}`;
+
+const asksBefore = resolveAsks.length;
+const [popup] = await Promise.all([
+  page.waitForEvent('popup'),
+  page.click('#matrixBody a'),
+]);
+await popup.waitForURL(/product-page/, { timeout: 10000 }).catch(() => {});
+check('tapping a price asks where the product lives', resolveAsks.length === asksBefore + 1,
+  `${resolveAsks.length - asksBefore} asks`);
+check('and asks for the matched product, not the typed word',
+  resolveAsks.at(-1)?.product?.includes('Milk'), JSON.stringify(resolveAsks.at(-1)));
+check('the tab lands on the resolved product page', /product=/.test(popup.url()), popup.url());
+check('which is the page for that shop', popup.url().includes(`shop=${resolveAsks.at(-1).store}`), popup.url());
+await popup.close();
+
+// A second tap costs no second lookup: product pages are cached far longer than
+// prices, because a URL changes when a shop rebuilds its site, not every week.
+const asksBeforeRepeat = resolveAsks.length;
+const [popup2] = await Promise.all([
+  page.waitForEvent('popup'),
+  page.click('#matrixBody a'),
+]);
+await popup2.waitForURL(/product-page/, { timeout: 10000 }).catch(() => {});
+check('a second tap is answered from cache', resolveAsks.length === asksBeforeRepeat, 'asked again');
+await popup2.close();
+
+// When the lookup finds nothing, the link still has to go somewhere useful.
+productFixture = () => null;
+const [popup3] = await Promise.all([
+  page.waitForEvent('popup'),
+  page.click('#matrixBody tr:nth-child(2) a'),
+]);
+await popup3.waitForTimeout(2000);
+// The tab is stopped at the door like every other outbound request, so what it was
+// reaching for is the evidence: the shop's own site, not a blank tab or Google.
+const followed = blocked.filter((u) => !/workers\.dev/.test(u)).at(-1) ?? '';
+check('an unresolved product still falls back to the shop itself',
+  /asda|morrisons|sainsburys|tesco/.test(followed), followed || '(nothing followed)');
+check('and not to a search engine', !/google\./.test(followed), followed);
+await popup3.close();
+productFixture = null;
+
+/* ---------- an estimate outlives leaving the list ---------- */
+
+// Opens the list whose card carries this name.
+async function openListNamed(name) {
+  for (const card of await page.$$('#listsGrid .card-list')) {
+    if (((await card.textContent()) ?? '').includes(name)) {
+      await card.click();
+      return true;
+    }
+  }
+  return false;
+}
+
+const workerCalls = () => blocked.filter((u) => /workers\.dev/.test(u)).length;
+const pricedRows = await page.$$eval('#matrixBody tr', (r) => r.length);
+const lookupsBeforeLeaving = workerCalls();
+
+await page.click('#backHome');
+await settle(600);
+check('the matrix is not on the home screen', !(await page.isVisible('#priceMatrix')));
+
+await openListNamed('Compare');
+await settle(900);
+check('the estimate is still there on coming back', await page.isVisible('#priceMatrix'));
+check('and the sentence that explains it comes back with it',
+  /Cheapest at|Best is/.test(await page.textContent('#estimateSummary')),
+  await page.textContent('#estimateSummary'));
+check('with the rows it was generated for',
+  (await page.$$eval('#matrixBody tr', (r) => r.length)) === pricedRows,
+  `${await page.$$eval('#matrixBody tr', (r) => r.length)} of ${pricedRows} rows`);
+// The whole point: an estimate costs a search per item per shop, so coming back to
+// one must not quietly buy it again.
+check('and nothing was looked up again to show it', workerCalls() === lookupsBeforeLeaving,
+  `${workerCalls() - lookupsBeforeLeaving} extra lookups`);
+
+const lookupsAfterReopen = workerCalls();
+check('it says it matches the list',
+  (await page.textContent('#matrixStatusText')).startsWith('Up to date'),
+  await page.textContent('#matrixStatusText'));
+
+// Adding to the list makes the prices a photograph of something else.
+await page.fill('#itemInput', 'Butter');
+await page.click('#addBtn');
+await settle(700);
+check('adding an item marks the matrix out of date',
+  (await page.textContent('#matrixStatusText')).startsWith('Out of date'),
+  await page.textContent('#matrixStatusText'));
+check('and says what changed', /1 added/.test(await page.textContent('#matrixStatusText')),
+  await page.textContent('#matrixStatusText'));
+check('going stale costs no lookups of its own', workerCalls() === lookupsAfterReopen);
+
+// Rows carry their text in an input, which :has-text cannot see.
+async function deleteItemNamed(name) {
+  for (const li of await page.$$('#list li')) {
+    const value = await li.$eval('input.text', (i) => i.value).catch(() => '');
+    if (value === name) {
+      await (await li.$('[aria-label="Delete this item"]')).click();
+      return true;
+    }
+  }
+  return false;
+}
+
+// Undo it and it is honest about being current again.
+check('the added item is there to remove', await deleteItemNamed('Butter'));
+await settle(700);
+check('removing the new item makes it current again',
+  (await page.textContent('#matrixStatusText')).startsWith('Up to date'),
+  await page.textContent('#matrixStatusText'));
+
+// Removing something it priced is the other direction: the row is now history.
+check('the priced item is there to remove', await deleteItemNamed('Milk'));
+await settle(700);
+check('removing a priced item marks it out of date',
+  /1 removed/.test(await page.textContent('#matrixStatusText')),
+  await page.textContent('#matrixStatusText'));
+check('and that row reads as history rather than as a price to act on',
+  await page.$eval('#matrixBody tr:first-child th', (th) => th.className.includes('line-through')),
+  await page.$eval('#matrixBody tr:first-child th', (th) => th.className));
+
 // The matrix is about the open list, so it must not follow you to another one.
 await page.click('#backHome');
 await settle(600);
-await page.click('#listsGrid .card-list:first-child');
+for (const card of await page.$$('#listsGrid .card-list')) {
+  if (!((await card.textContent()) ?? '').includes('Compare')) { await card.click(); break; }
+}
 await settle(700);
 check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
 priceFixture = null;
