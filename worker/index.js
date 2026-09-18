@@ -10,24 +10,27 @@
 // and a store from a fixed set, and returns prices. Nothing else about a list ever
 // reaches it, and it stores nothing.
 
-// How a listing is recognised as belonging to a shop. `names` are matched against
-// the seller Google displays; `domains` against the host the listing links to.
+// The shops this serves. Aldi and Lidl were here and are not any more: measured
+// against the live API, a search naming Aldi returned ten listings and none of them
+// were Aldi's, and a plain search returned none for either discounter. Neither
+// sells groceries online in the UK, so Google Shopping has nothing of theirs to
+// find, and a column that can only ever say "not stocked" costs a query per item
+// to say it. Tesco replaced them because the same measurement showed it three
+// times over.
 //
-// The host is checked because the seller name is a display string and not reliably
-// the shop's own: a listing can read "Aldi UK", "Aldi Stores" or a marketplace's
-// name while linking to aldi.co.uk, and matching the name alone threw those away.
-// It is matched as a host suffix rather than a substring of the whole URL, so a
-// link that merely mentions a shop in a query parameter is not mistaken for that
-// shop's own listing.
+// `names` are matched against the seller Google displays; `domains` against the
+// host the listing links to. The host check is a fallback for a seller name the
+// list does not know — but note that Serper returns google.com/search links rather
+// than the shop's own, so today it never fires. It is kept because it is correct
+// if that ever changes, not because it is doing work.
 const STORES = {
   asda: { names: ['asda'], domains: ['asda.com', 'asda.co.uk'] },
-  aldi: { names: ['aldi'], domains: ['aldi.co.uk', 'aldi.com'] },
-  lidl: { names: ['lidl'], domains: ['lidl.co.uk', 'lidl.com'] },
   morrisons: { names: ['morrisons'], domains: ['morrisons.com', 'morrisons.co.uk'] },
   sainsburys: {
     names: ["sainsbury's", 'sainsburys', 'sainsbury'],
     domains: ['sainsburys.co.uk'],
   },
+  tesco: { names: ['tesco'], domains: ['tesco.com', 'tesco.co.uk'] },
 };
 
 // What to put in the query. A search engine reads "Sainsbury's" very differently
@@ -36,10 +39,9 @@ const STORES = {
 // while "Sainsburys" behaves like the others.
 const STORE_LABELS = {
   asda: 'ASDA',
-  aldi: 'Aldi',
-  lidl: 'Lidl',
   morrisons: 'Morrisons',
   sainsburys: 'Sainsburys',
+  tesco: 'Tesco',
 };
 
 const MAX_ITEMS = 40;
