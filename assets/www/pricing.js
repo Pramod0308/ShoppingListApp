@@ -100,6 +100,67 @@ export async function priceItems(items, store) {
   return out;
 }
 
+/// Prices a list at every shop at once, for the comparison matrix. Returns a Map of
+/// store id -> the same per-item Map priceItems gives.
+///
+/// One request per shop rather than one for all of them: the Worker answers for a
+/// single store by design, and keeping it that way means this needs no redeploy.
+/// They go out together, so four shops take about as long as one.
+///
+/// It does cost about four times the search credits of a single-shop estimate, and
+/// a little more, because Sainsbury's needs a second query when naming the shop
+/// finds nothing. The per (item, shop) cache is what keeps that bearable: looking
+/// at the same list again inside a week is free.
+export async function priceAllStores(items) {
+  const entries = await Promise.all(
+    STORES.map(async (s) => [s.id, await priceItems(items, s.id)]),
+  );
+  return new Map(entries);
+}
+
+/// Turns that matrix into per-shop totals and picks the one to beat.
+///
+/// Summing whatever a shop happens to stock and calling the smallest number the
+/// winner is how a shop carrying none of your list wins with an empty basket —
+/// Aldi returns nothing at all, so it would win every comparison at £0.00. Coverage
+/// is therefore compared first and price only settles ties: the shops that priced
+/// the most items are the ones in the running, and the cheapest of those wins.
+/// `complete` says whether that was the whole list, so the UI can qualify it.
+export function compareStores(items, byStore) {
+  const rows = STORES.map((s) => {
+    const prices = byStore.get(s.id) ?? new Map();
+    let total = 0;
+    let priced = 0;
+    let missing = 0;
+    let failed = 0;
+    for (const item of items) {
+      const result = prices.get(item.id);
+      if (!result || result.error) failed++;
+      else if (result.unavailable) missing++;
+      else { total += result.price; priced++; }
+    }
+    return { store: s.id, label: s.label, total, priced, missing, failed };
+  });
+
+  const most = Math.max(0, ...rows.map((r) => r.priced));
+  const contenders = most > 0 ? rows.filter((r) => r.priced === most) : [];
+  const best = contenders.reduce((a, b) => (!a || b.total < a.total ? b : a), null);
+
+  return { rows, best: best?.store ?? null, complete: most === items.length && most > 0 };
+}
+
+/// The cheapest shop for one item, or null when nobody priced it. Ties go to the
+/// first shop in STORES order, so the highlight does not wander between renders.
+export function cheapestFor(itemId, byStore) {
+  let best = null;
+  for (const s of STORES) {
+    const result = byStore.get(s.id)?.get(itemId);
+    if (!result || result.error || result.unavailable) continue;
+    if (!best || result.price < best.price) best = { store: s.id, price: result.price };
+  }
+  return best;
+}
+
 async function lookup(items, store) {
   const res = await fetch(PRICE_API_URL, {
     method: 'POST',

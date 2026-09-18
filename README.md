@@ -49,10 +49,13 @@ from the URL on arrival, so the secret does not linger in history. Your name and
 colour ride along in the document, so shared lists show who made what — there is no
 account behind it.
 
-**Cost estimate.** Prices what is still to buy against one of ASDA, Aldi, Morrisons
-or Sainsbury's, flags what that shop does not stock, and links each priced row to the
-listing it was matched to. See [Cost estimate](#cost-estimate) for what it costs and
-what it sends.
+**Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
+Aldi, Morrisons and Sainsbury's — and lays them out as a matrix: a row per item, a
+column per shop, the cheapest shop for each item picked out, and a row of totals with
+the cheapest basket picked out. Every price links to that shop's own search for the
+product it was matched to. Anything a shop does not stock reads `n/a`; anything that
+could not be checked reads `—`. See [Cost estimate](#cost-estimate) for what that
+costs and what it sends.
 
 **Everywhere.** Dark and light themes, a timestamp toggle, and both remembered. The
 web build installs as a PWA and opens offline.
@@ -222,7 +225,7 @@ previous build after an app update.
 
 | Command | What it covers | Needs |
 | --- | --- | --- |
-| `npm test` | Ordering keys, document merges, the price Worker's parsing | nothing |
+| `npm test` | Ordering keys, document merges, the price Worker's parsing, the comparison rules | nothing |
 | `npm run test:e2e` | The whole app in a browser — see below | `npx playwright install chromium` |
 | `npm run test:signalling` | The signalling worker over a real socket | a worker running (below) |
 | `flutter test` | That the shell's asset manifest holds the whole bundle | the Flutter SDK |
@@ -269,8 +272,22 @@ npm run test:signalling
 
 ## Cost estimate
 
-The list view can price what is on it against one supermarket (ASDA, Aldi,
-Morrisons, Sainsbury's) and flag anything that store does not stock.
+The list view prices what is on it at all four supermarkets (ASDA, Aldi, Morrisons,
+Sainsbury's) at once and lays the answers out as a matrix, so the point of it is
+comparison rather than a single number.
+
+**That costs about four times the credits of a single-shop estimate** — one request
+per shop, and Sainsbury's needs a second query when naming the shop finds nothing.
+The per (item, shop) cache in `assets/www/pricing.js` is what makes it bearable:
+answers are held for 7 days, so looking at the same list again, or switching which
+shop the rows show, costs nothing at all.
+
+Picking the winner is not simply the smallest total. A shop that stocks none of your
+list totals £0.00, which beats every real shop — and Aldi returns nothing, so that is
+the ordinary case rather than a corner. `compareStores` therefore compares coverage
+first and uses price only to settle ties, the table dims a total that covers fewer
+items than the others, and a row under the totals says how many of the list each one
+actually priced. `tools/compare.test.mjs` is that rule written down.
 
 None of those retailers publish a price API, a browser cannot call their sites (no
 CORS), and a static bundle cannot hold a key — so `worker/` is a Cloudflare Worker

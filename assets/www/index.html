@@ -126,6 +126,18 @@
                 </div>
                 <p id="estimateSummary" class="hidden mt-2 px-1 text-[12px] text-muted"></p>
 
+                <!-- Every shop's price for every item, side by side. Filled by
+                     app.js; it scrolls sideways rather than shrinking the columns
+                     to nothing on a narrow phone. -->
+                <div id="priceMatrix" class="hidden mt-3 overflow-x-auto rounded-xl border border-line bg-surface">
+                    <table class="w-full border-collapse text-[12px]">
+                        <caption class="sr-only">What each item costs at each shop</caption>
+                        <thead id="matrixHead"></thead>
+                        <tbody id="matrixBody"></tbody>
+                        <tfoot id="matrixFoot"></tfoot>
+                    </table>
+                </div>
+
                 <div class="mt-3 flex items-center justify-between px-1">
                     <span id="remaining" class="text-[12px] font-medium text-faint">0 remaining</span>
                     <div class="flex items-center gap-1">
