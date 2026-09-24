@@ -73,7 +73,7 @@ function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -84,6 +84,47 @@ const json = (body, status, origin) =>
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
   });
+
+/* ---------- The passcode gate ----------
+
+   The endpoint is public and the Serper key is billed to whoever owns it, so an
+   unguarded worker is an open wallet: CORS decides who may *read* a reply, not who
+   may cause the request, and any client that is not a browser ignores it entirely.
+
+   The shared secret is a passcode set with `wrangler secret put APP_PASSCODE`. The
+   app never sends it — it sends a digest — and the worker compares that against the
+   digest of its own copy. Nothing derived from the passcode ships in the bundle, so
+   a stranger with the URL has nothing to work from but guesses.
+
+   With no APP_PASSCODE set the worker is exactly as open as it was before. That is
+   deliberate: turning the gate on is a decision, not something a deploy does to you.
+*/
+const TOKEN_HEADER = 'X-App-Token';
+
+function base64Url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// The same derivation the app uses. The prefix keeps this digest from colliding
+// with any other use of the same passcode.
+async function tokenFor(passcode) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`shopnest-gate:${passcode}`));
+  return base64Url(new Uint8Array(digest));
+}
+
+// Compared without an early exit, so how long the answer takes says nothing about
+// how much of the token was right.
+function sameToken(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function authorised(request, env) {
+  if (!env.APP_PASSCODE) return true; // no gate configured
+  return sameToken(request.headers.get(TOKEN_HEADER) ?? '', await tokenFor(env.APP_PASSCODE));
+}
 
 // "£1.25" / "1.25" / "GBP 1.25" -> 1.25
 function parsePrice(raw) {
@@ -275,15 +316,28 @@ export default {
     if (request.method !== 'POST') {
       return json({ error: 'POST only' }, 405, origin);
     }
-    if (!env.SERPER_API_KEY) {
-      return json({ error: 'worker is missing SERPER_API_KEY' }, 500, origin);
-    }
-
     let body;
     try {
       body = await request.json();
     } catch {
       return json({ error: 'expected JSON' }, 400, origin);
+    }
+
+    const allowed = await authorised(request, env);
+
+    // What the lock screen asks: is this passcode the right one? Answered without
+    // touching the search API, so being locked out costs nothing and neither does
+    // someone hammering it.
+    if (body.unlock === true) {
+      return allowed
+        ? json({ ok: true, required: Boolean(env.APP_PASSCODE) }, 200, origin)
+        : json({ error: 'passcode does not match' }, 401, origin);
+    }
+
+    if (!allowed) return json({ error: 'passcode required' }, 401, origin);
+
+    if (!env.SERPER_API_KEY) {
+      return json({ error: 'worker is missing SERPER_API_KEY' }, 500, origin);
     }
 
     const store = String(body.store ?? '').toLowerCase();

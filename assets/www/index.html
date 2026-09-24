@@ -30,6 +30,31 @@
 </head>
 <body class="bg-bg text-ink min-h-screen antialiased">
 
+    <!-- LOCK SCREEN
+         Shown before anything else when a passcode is configured. It is a door, not
+         a safe: the lists are in this browser either way, and what it really keeps
+         strangers away from is the price service, which costs money per search. -->
+    <div id="lockScreen" class="hidden fixed inset-0 z-[200] bg-bg flex items-center justify-center px-6">
+        <div class="w-full max-w-xs">
+            <h1 class="text-[22px] font-semibold tracking-tight text-center">ShopIt</h1>
+            <p class="mt-1 mb-6 text-[13px] text-muted text-center">Enter the passcode to use this app.</p>
+            <form id="lockForm" class="flex flex-col gap-2">
+                <input id="lockInput" type="password" inputmode="text" autocomplete="current-password"
+                       aria-label="Passcode" placeholder="Passcode"
+                       class="w-full h-11 bg-surface border border-line rounded-xl px-3 text-[15px] text-ink placeholder:text-faint focus:ring-0 focus:border-accent transition-colors">
+                <button id="lockSubmit" type="submit"
+                        class="h-11 rounded-xl bg-accent text-accent-ink text-[15px] font-medium transition-opacity hover:opacity-90 active:opacity-80">
+                    Unlock
+                </button>
+            </form>
+            <p id="lockError" class="hidden mt-3 text-[12px] text-danger text-center"></p>
+            <p class="mt-6 text-[11px] text-faint text-center leading-snug">
+                Asked once per device. It keeps strangers out of the app and off the
+                price lookups — it does not encrypt your lists.
+            </p>
+        </div>
+    </div>
+
     <!-- HOME VIEW -->
     <div id="home">
         <header class="sticky top-0 z-50 bg-bg/80 backdrop-blur-xl border-b border-line">

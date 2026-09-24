@@ -74,6 +74,10 @@ const OFFLINE_NOISE = /WebSocket|ERR_TUNNEL|ERR_NAME|ERR_FAILED|Failed to load r
 // accident: the app claims to start with nothing fetched, and this proves it.
 const blocked = [];
 
+// Whether a page opens as a device that has already been unlocked. Off only for the
+// check that a stranger with the URL gets a passcode box and nothing else.
+let seedUnlock = true;
+
 // Set to a (store, items) => payload function to answer the price Worker from a
 // fixture; null leaves it blocked, which is the offline path the app must survive.
 let priceFixture = null;
@@ -100,11 +104,21 @@ async function openPage(context) {
     // and the real Worker can neither be reached from CI nor spent on every push.
     // When a fixture is armed the Worker is answered from it — still without a
     // packet leaving the browser — so the matrix is tested against known numbers.
-    if (priceFixture && /workers\.dev/.test(url)) {
+    if (/workers\.dev/.test(url) && (priceFixture || /"unlock"/.test(route.request().postData() ?? ''))) {
       const body = JSON.parse(route.request().postData() ?? '{}');
       // Following a price asks the same Worker a different question: where is this
       // product's own page. Answered from the fixture so the click can be tested
       // without a search credit or a packet.
+      // The lock screen's question. Answered here so the suite exercises the real
+      // gated build rather than a special case of it.
+      if (body.unlock === true) {
+        const right = route.request().headers()['x-app-token'] === 'test-token';
+        return route.fulfill({
+          status: right ? 200 : 401,
+          contentType: 'application/json',
+          body: JSON.stringify(right ? { ok: true, required: true } : { error: 'nope' }),
+        });
+      }
       if (typeof body.product === 'string') {
         resolveAsks.push(body);
         return route.fulfill({
@@ -126,10 +140,16 @@ async function openPage(context) {
   await page.routeWebSocket(/.*/, () => {});
   // Neither dialog can be answered in a headless run, and both gate real behaviour
   // (delete, purge, the profile name), so they are answered from the test instead.
-  await page.addInitScript(() => {
+  // The shipped build asks for a passcode before it starts anything. Every page
+  // here is a device that has already been unlocked, except the one below that
+  // proves the gate is really there.
+  await page.addInitScript((unlocked) => {
     window.prompt = (_msg, def) => window.__promptReply ?? def;
     window.confirm = () => window.__confirmReply !== false;
-  });
+    if (unlocked) {
+      try { localStorage.setItem('shopnest-unlock', 'test-token'); } catch { /* no storage */ }
+    }
+  }, seedUnlock);
   return page;
 }
 
@@ -805,6 +825,44 @@ for (const card of await page.$$('#listsGrid .card-list')) {
 await settle(700);
 check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
 priceFixture = null;
+
+/* ---------- the passcode gate, on a device that has never been unlocked ---------- */
+
+// What a stranger who finds the URL gets. Nothing is supposed to start: no store,
+// no sync, and above all no lookups, because every lookup spends real money.
+seedUnlock = false;
+const strangerCtx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const stranger = await openPage(strangerCtx);
+const strangerCalls = () => blocked.filter((u) => /workers\.dev/.test(u)).length;
+const beforeStranger = strangerCalls();
+await stranger.goto(BASE, { waitUntil: 'networkidle' });
+await stranger.waitForTimeout(1200);
+
+check('a device that has never been unlocked is asked for a passcode',
+  await stranger.isVisible('#lockScreen'));
+check('and the app itself is not shown', !(await stranger.isVisible('#home')));
+check('and nothing was looked up before unlocking', strangerCalls() === beforeStranger,
+  `${strangerCalls() - beforeStranger} lookups`);
+check('and no list was opened', (await stranger.textContent('#listsGrid')).trim() === '');
+
+// A wrong passcode says so and leaves the door shut.
+await stranger.fill('#lockInput', 'not the passcode');
+await stranger.click('#lockSubmit');
+await stranger.waitForTimeout(1200);
+check('a wrong passcode is refused', await stranger.isVisible('#lockScreen'));
+check('and says so', /not right/i.test(await stranger.textContent('#lockError')),
+  await stranger.textContent('#lockError'));
+
+// And an accepted one lets the app start. The digest is derived in the page from
+// what was typed, so the accepted token is planted directly rather than reversing
+// a hash to find a passcode that produces it.
+await stranger.evaluate(() => localStorage.setItem('shopnest-unlock', 'test-token'));
+await stranger.reload({ waitUntil: 'networkidle' });
+await stranger.waitForTimeout(1500);
+check('once unlocked the app starts', !(await stranger.isVisible('#lockScreen')));
+check('and the home screen is there', await stranger.isVisible('#home'));
+await strangerCtx.close();
+seedUnlock = true;
 
 /* ---------- a share link, followed on another device ---------- */
 const other = await browser.newContext({ viewport: { width: 420, height: 900 } });
