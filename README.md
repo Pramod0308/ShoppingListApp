@@ -49,22 +49,25 @@ on the rows they added. Names are self-asserted: anyone holding a share link can
 already edit everything in the list, so this is honest labelling among people who
 trust each other, not proof of identity.
 
-**Sync, and its limits.** Devices talk to each other directly over WebRTC; no server
-holds a copy. That is what makes the app private, and it is also what it costs:
+**Sync.** Two halves, because one of them alone is not enough.
 
-- **Both devices have to be open at the same time** for a change to cross. Add
-  something on one phone while the other is in a pocket and it does not arrive until
-  they are next open together. Nothing is lost — the documents merge whenever they
-  meet — but this is not a message waiting for you when you open the app.
-- **Two STUN servers, no TURN.** On the same wifi this is reliable. Between two phones
-  on mobile data it often is not: carrier-grade NAT gives peers no route to each other
-  and there is no relay to fall back on.
-- The signalling worker only introduces peers. It never sees list content, and the
-  room name it does see is a digest.
+Devices talk to each other directly over WebRTC when they can: fast, and no server
+involved. But peers only meet while both are awake, so on its own that means a change
+made while the other phone is in a pocket goes nowhere. The **relay** is the other
+half — a room on the signalling worker that keeps updates until the device that missed
+them turns up. Add bread on one phone, close it, open the other tomorrow: it is there.
 
-For a list two people add to during the week, that means treating it as "syncs when we
-are both looking", not as a shared cloud document. Fixing it properly means a relay
-that stores changes until the other device appears — see Known gaps.
+What the relay stores is encrypted with the room secret, which lives on the devices
+and in the share link and never reaches the server. The room name is a digest of that
+same secret under its own label, so the relay cannot line its rooms up with the
+signalling server's topics. Be clear about what is given up, though: the signalling
+worker genuinely sees nothing, and the relay sees shapes — how many updates of what
+size belong together, and when. It cannot read them. `RELAY_SERVER = ''` in
+`sync-config.js` turns it off and leaves the app exactly as peer-to-peer as it was.
+
+A server that cannot read the updates cannot merge them either, so the log is
+append-only and clients are asked to collapse it: a snapshot is one device's whole
+document, and it replaces every update it covers.
 
 **Sharing.** Two links, meaning two different things. Share on a list copies a
 `?join=` link that hands over that one list. Link device copies a `?link=` link that
@@ -345,12 +348,12 @@ every device.
   category page is therefore unmeasured. Tapping a few prices after a deploy is the
   check; the fallback to the shop's search means a bad answer is a less precise link
   rather than a broken one.
-- **Sync needs both devices open at once, and often needs the same wifi.** WebRTC is
-  peer to peer, so there is nowhere for a change to wait; and with STUN but no TURN,
-  two phones on mobile data frequently cannot reach each other at all. The fix is a
-  relay that holds changes until the other device appears — the signalling worker is
-  already a Durable Object, so a y-websocket style room alongside it would serve, at
-  the cost of the server seeing encrypted document updates it currently never sees.
+- **There is still no TURN server.** The relay makes this far less painful — two
+  phones that cannot reach each other directly now sync through it rather than not at
+  all — but a direct peer connection between two devices on mobile data will often
+  still fail, so those changes take the slower path.
+- **A relay room is never garbage collected.** A list nobody opens again keeps its
+  snapshot on the server for good; there is no expiry and no way to delete a room.
 - The passcode is remembered per device with no way to change it from the UI, and
   rotating it means re-unlocking every device by hand.
 - Release signing is wired to repository secrets, so a tag build fails rather than

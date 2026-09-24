@@ -17,6 +17,7 @@
 
 import { Y, IndexeddbPersistence } from './vendor/sync.js';
 import { connectPeers, newSecret } from './peer-sync.js';
+import { joinRelay, leaveRelay } from './relay-sync.js';
 import { keyBetween, keysBetween } from './order-key.js';
 import { applyTextEdit } from './text-sync.js';
 
@@ -37,6 +38,7 @@ const compare = (a, b) => byKey(a.order, b.order) || byKey(a.id, b.id);
 export class Store {
   #indexDoc = new Y.Doc();
   #indexPersistence = null;
+  #indexRelayRoom = null;
   #lists = new Map(); // id -> { doc, items, persistence, provider }
   #listeners = new Set();
   #deviceSecret = null;
@@ -72,6 +74,10 @@ export class Store {
     await this.#migrateSingleDocument();
     await this.#openMissingLists();
 
+    // The relay keeps changes for a device that is not awake; peers are the fast
+    // path when both are. Neither is required for the app to work offline.
+    joinRelay(this.#indexDoc, deviceSecret).then((room) => { this.#indexRelayRoom = room; });
+
     connectPeers(this.#indexDoc, deviceSecret)
       .catch((err) => console.warn('index sync unavailable:', err.message));
 
@@ -101,7 +107,7 @@ export class Store {
     if (existing) return existing;
 
     const doc = new Y.Doc();
-    const handle = { doc, items: doc.getMap('items'), persistence: null, provider: null };
+    const handle = { doc, items: doc.getMap('items'), persistence: null, provider: null, relayRoom: null };
     this.#lists.set(id, handle);
 
     doc.getMap('items').observeDeep(() => this.#emit());
@@ -113,6 +119,7 @@ export class Store {
       this.#emit();
       if (!secret) return;
       try {
+        handle.relayRoom = await joinRelay(doc, secret);
         handle.provider = await connectPeers(doc, secret);
       } catch (err) {
         console.warn(`list ${id} sync unavailable:`, err.message);
@@ -125,6 +132,7 @@ export class Store {
   #closeList(id) {
     const handle = this.#lists.get(id);
     if (!handle) return;
+    leaveRelay(handle.relayRoom);
     handle.provider?.destroy();
     handle.persistence?.destroy();
     handle.doc.destroy();

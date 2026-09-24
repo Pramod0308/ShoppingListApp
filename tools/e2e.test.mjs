@@ -74,6 +74,57 @@ const OFFLINE_NOISE = /WebSocket|ERR_TUNNEL|ERR_NAME|ERR_FAILED|Failed to load r
 // accident: the app claims to start with nothing fetched, and this proves it.
 const blocked = [];
 
+/* ---------- a relay, in the test ----------
+
+   Its storage is module-level on purpose: outliving the browser contexts is exactly
+   what "the other phone was closed" means. Peer sync cannot reach a device that is
+   not there, so anything the second device knows came through here. */
+const relayLog = new Map(); // room -> [{ seq, data }]
+const relaySockets = new Set();
+let relaySeq = 0;
+
+function serveRelay(ws) {
+  const joined = new Set();
+  relaySockets.add(ws);
+
+  ws.onMessage((raw) => {
+    let message;
+    try {
+      message = JSON.parse(typeof raw === 'string' ? raw : raw.toString());
+    } catch {
+      return;
+    }
+    if (message.type === 'ping') return ws.send(JSON.stringify({ type: 'pong' }));
+
+    if (message.type === 'join') {
+      for (const room of message.rooms ?? []) {
+        joined.add(room);
+        ws.send(JSON.stringify({ type: 'sync', room, updates: relayLog.get(room) ?? [] }));
+      }
+      return;
+    }
+
+    if (!joined.has(message.room) || typeof message.data !== 'string') return;
+    if (message.type !== 'update' && message.type !== 'snapshot') return;
+
+    const entry = { seq: ++relaySeq, data: message.data };
+    relayLog.set(
+      message.room,
+      message.type === 'snapshot' ? [entry] : [...(relayLog.get(message.room) ?? []), entry],
+    );
+    for (const peer of relaySockets) {
+      if (peer === ws) continue;
+      try {
+        peer.send(JSON.stringify({ type: 'update', room: message.room, ...entry }));
+      } catch {
+        // A socket that has gone away is not this one's problem.
+      }
+    }
+  });
+
+  ws.onClose(() => relaySockets.delete(ws));
+}
+
 // Whether a page opens as a device that has already been unlocked. Off only for the
 // check that a stranger with the URL gets a passcode box and nothing else.
 let seedUnlock = true;
@@ -137,7 +188,10 @@ async function openPage(context) {
   });
   // Sockets do not go through page.route, and y-webrtc opens one on startup. Handling
   // it without connecting upstream is what keeps CI off the real signalling server.
+  // Registered first because the last matching route wins, and the relay below needs
+  // to answer for its own URL rather than being swallowed by this.
   await page.routeWebSocket(/.*/, () => {});
+  await page.routeWebSocket(/\/relay$/, serveRelay);
   // Neither dialog can be answered in a headless run, and both gate real behaviour
   // (delete, purge, the profile name), so they are answered from the test instead.
   // The shipped build asks for a passcode before it starts anything. Every page
@@ -825,6 +879,80 @@ for (const card of await page.$$('#listsGrid .card-list')) {
 await settle(700);
 check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
 priceFixture = null;
+
+/* ---------- a change that outlives the other phone being closed ---------- */
+
+// The thing peer sync cannot do. Two phones only meet over WebRTC while both are
+// awake, so a list you add to while the other is in a pocket used to go nowhere. Here
+// the first device is closed entirely before the second one ever opens: no peer
+// exists, and every socket but the relay is stubbed dead.
+const deviceOne = await browser.newContext({
+  viewport: { width: 420, height: 900 },
+  permissions: ['clipboard-read', 'clipboard-write'],
+});
+const phoneA = await openPage(deviceOne);
+await phoneA.goto(BASE, { waitUntil: 'networkidle' });
+await phoneA.waitForTimeout(1500);
+await phoneA.fill('#newListName', 'Relayed');
+await phoneA.press('#newListName', 'Enter');
+await phoneA.waitForTimeout(800);
+await phoneA.evaluate(() => {
+  const ta = document.getElementById('itemInput');
+  ta.value = 'kept while you were away';
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await phoneA.click('#addBtn');
+await phoneA.waitForTimeout(900);
+
+await phoneA.click('#backHome');
+await phoneA.waitForTimeout(500);
+await phoneA.click('#linkDevice');
+await phoneA.waitForTimeout(600);
+const pairUrl = await phoneA.evaluate(async () => {
+  try { return await navigator.clipboard.readText(); } catch { return ''; }
+});
+check('the first device offers a pairing link', /\?link=/.test(pairUrl), pairUrl);
+const relayedRooms = relayLog.size;
+check('and what it added reached the relay', relayedRooms > 0, `${relayedRooms} rooms stored`);
+
+// Closed, not backgrounded. Nothing of this device is running any more.
+await deviceOne.close();
+await new Promise((r) => setTimeout(r, 500));
+
+const deviceTwo = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const phoneB = await openPage(deviceTwo);
+await phoneB.goto(pairUrl.replace(PUBLIC, BASE), { waitUntil: 'networkidle' });
+await phoneB.waitForTimeout(3000);
+
+check('a second phone sees the list with the first one closed',
+  (await phoneB.textContent('#listsGrid')).includes('Relayed'),
+  await phoneB.textContent('#listsGrid'));
+
+await phoneB.click('#listsGrid .card-list');
+await phoneB.waitForTimeout(900);
+check('and the item that was added while it was away',
+  (await phoneB.textContent('#list')).includes('kept while you were away')
+    || (await phoneB.$$eval('#list input.text', (i) => i.map((x) => x.value))).join(' ')
+         .includes('kept while you were away'),
+  (await phoneB.$$eval('#list input.text', (i) => i.map((x) => x.value))).join(' | '));
+
+// What the server holds is ciphertext. Each update is decoded on its own — run
+// together they are not valid base64, and a decode that throws would have made this
+// look like a pass.
+const stored = [...relayLog.values()].flat();
+const decoded = stored.map((u) => {
+  try {
+    return atob(u.data);
+  } catch {
+    return '';
+  }
+}).join('');
+check('the relay is actually holding something', stored.length > 0 && decoded.length > 0,
+  `${stored.length} updates, ${decoded.length} bytes`);
+check('and none of it is the list in the clear',
+  !decoded.includes('kept while you were away') && !decoded.includes('Relayed'),
+  'plain text found in relay storage');
+await deviceTwo.close();
 
 /* ---------- the passcode gate, on a device that has never been unlocked ---------- */
 

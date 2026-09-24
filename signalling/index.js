@@ -109,6 +109,167 @@ export class SignallingRoom extends DurableObject {
   async webSocketError() {}
 }
 
+/* ============================================================
+   The relay.
+
+   Signalling introduces two peers who are both there. That is the whole limit of
+   WebRTC for a shopping list: add bread on one phone while the other is in a pocket
+   and there is nowhere for the change to wait. Both must be awake at the same moment,
+   and with STUN but no TURN two phones on mobile data often cannot reach each other
+   even then.
+
+   So this keeps the changes. A client sends its document updates here, they are
+   stored, and the next client to connect is given everything it missed.
+
+   What it stores is ciphertext. The server has no key and no way to get one: the key
+   is derived from the room secret, which lives on the devices and in the share link
+   and never reaches here. The room name is a digest of that same secret, so the only
+   thing this object learns is that some number of anonymous updates of some size
+   belong together. That is the price of durability, and it is worth being explicit
+   that it is a price: the signalling object above genuinely sees nothing, and this
+   one sees shapes.
+
+   It cannot merge what it cannot read, so the log is append-only and clients are
+   asked to collapse it: a snapshot is one client's whole document, and it replaces
+   every update it covers.
+   ============================================================ */
+
+// Where the log is asked to collapse, and where it is made to.
+const COMPACT_AT = 40;
+const FORCE_COMPACT_AT = 400;
+// Room names are digests; updates are base64. A shopping list is orders of magnitude
+// under this, so anything near it is not this app.
+const MAX_ROOM_NAME = 128;
+const MAX_PAYLOAD = 64 * 1024;
+const MAX_ROOMS_PER_SOCKET = 100;
+
+const seqKey = (room, seq) => `u:${room}:${String(seq).padStart(12, '0')}`;
+
+export class RelayRoom extends DurableObject {
+
+  async fetch(request) {
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('expected a websocket', { status: 426 });
+    }
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment([]);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  roomsOf(ws) {
+    try {
+      const rooms = ws.deserializeAttachment();
+      return Array.isArray(rooms) ? rooms : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async nextSeq(room) {
+    const next = (await this.ctx.storage.get(`n:${room}`)) ?? 1;
+    await this.ctx.storage.put(`n:${room}`, next + 1);
+    return next;
+  }
+
+  async storedUpdates(room) {
+    const rows = await this.ctx.storage.list({ prefix: `u:${room}:` });
+    return [...rows.entries()].map(([key, data]) => ({
+      seq: Number(key.slice(key.lastIndexOf(':') + 1)),
+      data,
+    }));
+  }
+
+  send(ws, message) {
+    try {
+      ws.send(JSON.stringify(message));
+    } catch {
+      // A socket that has gone away is not this connection's problem.
+    }
+  }
+
+  broadcast(room, message, except) {
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer === except) continue;
+      if (this.roomsOf(peer).includes(room)) this.send(peer, message);
+    }
+  }
+
+  async webSocketMessage(ws, raw) {
+    let message;
+    try {
+      message = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw));
+    } catch {
+      return;
+    }
+    if (!message || typeof message.type !== 'string') return;
+
+    if (message.type === 'ping') {
+      this.send(ws, { type: 'pong' });
+      return;
+    }
+
+    if (message.type === 'join') {
+      const asked = (Array.isArray(message.rooms) ? message.rooms : [])
+        .filter((r) => typeof r === 'string' && r.length > 0 && r.length <= MAX_ROOM_NAME);
+      const rooms = new Set(this.roomsOf(ws));
+      for (const room of asked) {
+        if (rooms.size >= MAX_ROOMS_PER_SOCKET) break;
+        rooms.add(room);
+      }
+      ws.serializeAttachment([...rooms]);
+
+      // Everything this device missed while it was closed.
+      for (const room of asked) {
+        if (!rooms.has(room)) continue;
+        const updates = await this.storedUpdates(room);
+        this.send(ws, { type: 'sync', room, updates });
+      }
+      return;
+    }
+
+    const room = typeof message.room === 'string' ? message.room : null;
+    if (!room || !this.roomsOf(ws).includes(room)) return;
+    if (typeof message.data !== 'string' || message.data.length > MAX_PAYLOAD) return;
+
+    if (message.type === 'snapshot') {
+      // One client's whole document, standing in for everything up to `replaces`.
+      // Updates that arrived after it was taken are left alone.
+      const replaces = Number.isInteger(message.replaces) ? message.replaces : 0;
+      const stale = (await this.storedUpdates(room)).filter((u) => u.seq <= replaces);
+      if (stale.length) await this.ctx.storage.delete(stale.map((u) => seqKey(room, u.seq)));
+
+      const seq = await this.nextSeq(room);
+      await this.ctx.storage.put(seqKey(room, seq), message.data);
+      this.broadcast(room, { type: 'update', room, seq, data: message.data }, ws);
+      return;
+    }
+
+    if (message.type !== 'update') return;
+
+    const existing = await this.storedUpdates(room);
+    // A log nobody has collapsed. Refusing the write rather than dropping the oldest
+    // entries: old updates are what a device that has been away for a week still
+    // needs, and the snapshot this asks for carries the refused change anyway.
+    if (existing.length >= FORCE_COMPACT_AT) {
+      this.send(ws, { type: 'compact', room, upTo: existing[existing.length - 1]?.seq ?? 0, required: true });
+      return;
+    }
+
+    const seq = await this.nextSeq(room);
+    await this.ctx.storage.put(seqKey(room, seq), message.data);
+    this.broadcast(room, { type: 'update', room, seq, data: message.data }, ws);
+
+    if (existing.length + 1 >= COMPACT_AT) {
+      this.send(ws, { type: 'compact', room, upTo: seq, required: false });
+    }
+  }
+
+  async webSocketClose() {}
+  async webSocketError() {}
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -121,6 +282,12 @@ export default {
         status: 200,
         headers: { 'Content-Type': 'text/plain' },
       });
+    }
+
+    // The relay is a different service on a different path: one socket per device
+    // rather than one per list, multiplexed by room the same way signalling is.
+    if (url.pathname === '/relay') {
+      return env.RELAY.getByName('shopnest-relay').fetch(request);
     }
 
     // One room for everyone: peers are separated by topic, not by object, and
