@@ -880,6 +880,53 @@ await settle(700);
 check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
 priceFixture = null;
 
+/* ---------- joining a list by pasting the link ---------- */
+
+// The link arrives in a chat app, and on a phone with this installed tapping it
+// often opens a different browser than the one holding the lists. Pasting is the way
+// to put it where you are.
+const pasteCtx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const paster = await openPage(pasteCtx);
+await paster.goto(BASE, { waitUntil: 'networkidle' });
+await paster.waitForTimeout(1500);
+
+// Rubbish is refused rather than swallowed.
+await paster.fill('#joinInput', 'https://example.com/nothing-here');
+await paster.click('#joinBtn');
+await paster.waitForTimeout(400);
+check('a link with no list in it is refused',
+  /does not look like a list link/i.test(await paster.textContent('#joinError')),
+  await paster.textContent('#joinError'));
+
+// A device link is a different thing with a much bigger blast radius, and must not
+// be quietly treated as a list to join.
+await paster.fill('#joinInput', `${PUBLIC}?link=some-device-secret`);
+await paster.click('#joinBtn');
+await paster.waitForTimeout(400);
+check('a device link is named rather than adopted as a list',
+  /device link/i.test(await paster.textContent('#joinError')),
+  await paster.textContent('#joinError'));
+check('and nothing was added to the home screen',
+  (await paster.$$('#listsGrid .card-list')).length === 0,
+  `${(await paster.$$('#listsGrid .card-list')).length} cards`);
+
+// The real one, pasted whole, exactly as it was copied.
+await paster.fill('#joinInput', shareUrl);
+await paster.click('#joinBtn');
+await paster.waitForTimeout(1500);
+check('pasting a list link opens that list',
+  await paster.isVisible('#listView'), 'still on the home screen');
+await paster.click('#backHome');
+await paster.waitForTimeout(600);
+check('and it is on the home screen afterwards',
+  (await paster.$$('#listsGrid .card-list')).length === 1,
+  `${(await paster.$$('#listsGrid .card-list')).length} cards`);
+
+// The token on its own, for a link that lost its scheme on the way.
+check('the error clears once the field is corrected',
+  await paster.isHidden('#joinError'));
+await pasteCtx.close();
+
 /* ---------- a change that outlives the other phone being closed ---------- */
 
 // The thing peer sync cannot do. Two phones only meet over WebRTC while both are

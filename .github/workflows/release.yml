@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch: # Build the apps on demand without cutting a tag
 
 jobs:
   # The web bundle is committed, so the thing that goes wrong is someone editing a
@@ -86,9 +87,15 @@ jobs:
       - name: Run Signalling Tests
         run: npm run test:signalling
 
+  # Only on a version tag or when asked for. The app builds are the slow half of
+  # every run and the iOS one bills at ten times the rate on a macOS runner, while
+  # what they prove — that the shell still compiles around the bundle — has not
+  # changed on a pull request that only touches assets/www. A tag still builds and
+  # signs the release, and `workflow_dispatch` runs one on demand.
   build:
     name: Build Android APK
     needs: web
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -191,6 +198,7 @@ jobs:
   ios:
     name: Build iOS
     needs: web
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
 
     steps:

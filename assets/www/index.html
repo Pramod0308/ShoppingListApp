@@ -83,6 +83,25 @@
                 </div>
             </section>
 
+            <!-- Joining a list someone sent you.
+                 Tapping the link works when the browser has it, but a link that
+                 arrives in a chat app on a phone with this installed often opens a
+                 different browser than the one holding your lists — and then the
+                 list lands somewhere you are not. Pasting it here puts it where you
+                 are looking. -->
+            <section class="mb-6">
+                <div class="flex items-center gap-2 bg-surface border border-line rounded-xl h-11 pl-3 pr-1 focus-within:border-accent transition-colors">
+                    <span class="material-symbols-outlined icon-sm text-faint shrink-0">link</span>
+                    <input id="joinInput" type="text" inputmode="url" autocomplete="off"
+                           class="flex-1 min-w-0 bg-transparent border-0 p-0 text-[15px] text-ink placeholder:text-faint focus:ring-0"
+                           placeholder="Paste a list link to join" aria-label="Paste a list link to join">
+                    <button id="joinBtn" class="icon-btn shrink-0 h-9 px-3 rounded-lg border border-line text-[14px] font-medium text-ink hover:bg-raised transition-colors">
+                        Join
+                    </button>
+                </div>
+                <p id="joinError" class="hidden mt-2 px-1 text-[12px] text-danger"></p>
+            </section>
+
             <section>
                 <div class="flex items-center justify-between mb-2 px-1">
                     <h2 class="text-[12px] font-medium uppercase tracking-wider text-faint">Your lists</h2>
