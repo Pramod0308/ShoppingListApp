@@ -34,3 +34,11 @@ export const PUBLIC_BASE_URL = 'https://pramod0308.github.io/ShoppingListApp/';
 // the app failing at a URL that was never set. Anything other than a *.workers.dev
 // host also needs adding to connect-src in index.html, or the browser refuses it.
 export const PRICE_API_URL = 'https://shopnest-prices.shopitnest.workers.dev/';
+
+// Whether the app asks for a passcode before it will start.
+//
+// It is checked against APP_PASSCODE on the price worker, so this flag and that
+// secret go together: turn this on without setting the secret and the worker will
+// wave everyone through, leaving a lock screen that any passcode opens.
+//   wrangler secret put APP_PASSCODE
+export const REQUIRE_PASSCODE = true;

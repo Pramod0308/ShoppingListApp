@@ -383,5 +383,86 @@ function stubSearch(organic) {
   check('and answers with the url rather than prices', body.url !== undefined && body.results === undefined);
 }
 
+// 14. The passcode gate.
+//
+//     CORS decides who may read a reply, not who may cause the request — any client
+//     that is not a browser ignores it — so without this the endpoint is an open
+//     wallet: every call spends a search billed to whoever owns the key.
+const PASSCODE = 'open sesame';
+const gated = { SERPER_API_KEY: 'test', APP_PASSCODE: PASSCODE };
+
+async function tokenFor(passcode) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`shopnest-gate:${passcode}`));
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+const callAs = (body, token, env = gated) =>
+  worker.fetch(
+    new Request('https://w/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: ORIGIN,
+        ...(token === undefined ? {} : { 'X-App-Token': token }),
+      },
+      body: JSON.stringify(body),
+    }),
+    env,
+  );
+
+{
+  stubSerper([{ title: 'Tesco Milk', source: 'Tesco', price: '£1.00' }]);
+  let searches = 0;
+  globalThis.fetch = async () => {
+    searches++;
+    return new Response(JSON.stringify({ shopping: [] }), { status: 200 });
+  };
+
+  const none = await callAs({ store: 'tesco', items: ['milk'] }, undefined);
+  check('a request with no token is refused', none.status === 401, String(none.status));
+  check('and it costs no search', searches === 0, `${searches} searches`);
+
+  const wrong = await callAs({ store: 'tesco', items: ['milk'] }, await tokenFor('guess'));
+  check('a wrong passcode is refused', wrong.status === 401);
+  check('and still costs no search', searches === 0, `${searches} searches`);
+
+  const right = await callAs({ store: 'tesco', items: ['milk'] }, await tokenFor(PASSCODE));
+  check('the right passcode is served', right.status === 200, String(right.status));
+  check('and that one does search', searches > 0);
+}
+{
+  // The lock screen has to be able to ask without spending anything, or being
+  // locked out would cost money and so would anyone hammering the box.
+  let searches = 0;
+  globalThis.fetch = async () => { searches++; return new Response('{}', { status: 200 }); };
+
+  const ok = await callAs({ unlock: true }, await tokenFor(PASSCODE));
+  check('unlock accepts the right passcode', ok.status === 200);
+  check('and says a passcode is required', (await ok.json()).required === true);
+
+  const bad = await callAs({ unlock: true }, await tokenFor('nope'));
+  check('unlock refuses the wrong one', bad.status === 401);
+  check('checking a passcode spends no searches', searches === 0, `${searches} searches`);
+  check('a refusal still carries CORS, or the app cannot read it',
+    bad.headers.get('Access-Control-Allow-Origin') === ORIGIN);
+}
+{
+  // Turning the gate on is a decision. A worker with no passcode set behaves
+  // exactly as it did before, rather than locking everyone out on deploy.
+  stubSerper([{ title: 'Tesco Milk', source: 'Tesco', price: '£1.00' }]);
+  const open = await callAs({ store: 'tesco', items: ['milk'] }, undefined, { SERPER_API_KEY: 'test' });
+  check('no passcode configured leaves the worker open', open.status === 200);
+  const asked = await callAs({ unlock: true }, undefined, { SERPER_API_KEY: 'test' });
+  check('and unlock says none is required', (await asked.json()).required === false);
+}
+{
+  const preflight = await worker.fetch(
+    new Request('https://w/', { method: 'OPTIONS', headers: { Origin: ORIGIN } }), {});
+  check('preflight allows the token header',
+    /x-app-token/i.test(preflight.headers.get('Access-Control-Allow-Headers') ?? ''),
+    preflight.headers.get('Access-Control-Allow-Headers'));
+}
+
 console.log(failures === 0 ? 'pricing: all checks passed' : `pricing: ${failures} failures`);
 process.exit(failures === 0 ? 0 : 1);

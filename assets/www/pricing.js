@@ -12,6 +12,7 @@
 // runs in the background, and no other part of a list is ever sent.
 
 import { PRICE_API_URL } from './sync-config.js';
+import { authHeaders } from './passcode.js';
 
 // Aldi and Lidl are deliberately absent. Measured against the live API: a search
 // naming Aldi returned ten listings, none of them Aldi's, and a plain search found
@@ -214,9 +215,11 @@ export function cheapestFor(itemId, byStore) {
 async function lookup(items, store) {
   const res = await fetch(PRICE_API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ store, items }),
   });
+  // A rejected passcode is worth saying plainly; every other failure is a number.
+  if (res.status === 401) throw new Error('The passcode this device saved is no longer accepted');
   if (!res.ok) throw new Error(`lookup failed (${res.status})`);
   return res.json();
 }
@@ -334,7 +337,7 @@ export async function resolveProductUrl(store, title) {
   try {
     const res = await fetch(PRICE_API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ store, product: title }),
     });
     if (!res.ok) return null;

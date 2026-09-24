@@ -49,6 +49,23 @@ on the rows they added. Names are self-asserted: anyone holding a share link can
 already edit everything in the list, so this is honest labelling among people who
 trust each other, not proof of identity.
 
+**Sync, and its limits.** Devices talk to each other directly over WebRTC; no server
+holds a copy. That is what makes the app private, and it is also what it costs:
+
+- **Both devices have to be open at the same time** for a change to cross. Add
+  something on one phone while the other is in a pocket and it does not arrive until
+  they are next open together. Nothing is lost — the documents merge whenever they
+  meet — but this is not a message waiting for you when you open the app.
+- **Two STUN servers, no TURN.** On the same wifi this is reliable. Between two phones
+  on mobile data it often is not: carrier-grade NAT gives peers no route to each other
+  and there is no relay to fall back on.
+- The signalling worker only introduces peers. It never sees list content, and the
+  room name it does see is a digest.
+
+For a list two people add to during the week, that means treating it as "syncs when we
+are both looking", not as a shared cloud document. Fixing it properly means a relay
+that stores changes until the other device appears — see Known gaps.
+
 **Sharing.** Two links, meaning two different things. Share on a list copies a
 `?join=` link that hands over that one list. Link device copies a `?link=` link that
 hands over your whole index, and so every list in it. Both are adopted and stripped
@@ -267,6 +284,38 @@ npm run test:signalling
 
 `SIGNAL_URL=wss://…` points it at a deployed one instead.
 
+## Passcode
+
+The app asks for a passcode before it starts anything — no store, no sync, no price
+lookups. Two things to be clear about:
+
+- **It is a door, not a safe.** The lists live in the browser's IndexedDB either way.
+  Anyone holding an unlocked phone, or willing to open the developer tools on it, can
+  read them whatever the lock screen says.
+- **What it really protects is the price service**, which spends money per search.
+  CORS decides who may *read* a reply, not who may cause the request — any client
+  that is not a browser ignores it — so before this the worker was an open wallet to
+  anyone who knew the URL.
+
+The passcode is never stored and never sent. The app sends a digest of it, and the
+worker compares that against the digest of its own copy, so nothing in the shipped
+bundle helps anyone guess it. Set it on the worker and turn the flag on together:
+
+```bash
+cd worker && npx wrangler secret put APP_PASSCODE   # type the passcode
+# assets/www/sync-config.js: export const REQUIRE_PASSCODE = true;
+```
+
+**Both halves matter.** With `REQUIRE_PASSCODE` on and no secret set, the worker waves
+everyone through and the lock screen opens to any passcode at all. With the secret set
+and the flag off, the app cannot price anything, because it sends no token. A worker
+with no `APP_PASSCODE` behaves exactly as it did before — turning the gate on is a
+decision, not something a deploy does to you.
+
+It is asked once per device and then remembered; `shopitLock()` in the console is the
+way back out. Changing the passcode means setting the secret again and re-unlocking
+every device.
+
 ## Known gaps
 
 - There is no Settings screen. The Archive and Settings tabs that used to sit in the
@@ -296,6 +345,14 @@ npm run test:signalling
   category page is therefore unmeasured. Tapping a few prices after a deploy is the
   check; the fallback to the shop's search means a bad answer is a less precise link
   rather than a broken one.
+- **Sync needs both devices open at once, and often needs the same wifi.** WebRTC is
+  peer to peer, so there is nowhere for a change to wait; and with STUN but no TURN,
+  two phones on mobile data frequently cannot reach each other at all. The fix is a
+  relay that holds changes until the other device appears — the signalling worker is
+  already a Durable Object, so a y-websocket style room alongside it would serve, at
+  the cost of the server seeing encrypted document updates it currently never sees.
+- The passcode is remembered per device with no way to change it from the UI, and
+  rotating it means re-unlocking every device by hand.
 - Release signing is wired to repository secrets, so a tag build fails rather than
   publishing a debug-signed APK if they are ever missing.
 - The iOS target builds but has never been signed or installed on a device. CI

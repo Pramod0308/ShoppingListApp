@@ -2,6 +2,7 @@
 import { Store } from "./store.js";
 import { resolveLinkSecret } from "./peer-sync.js";
 import { PUBLIC_BASE_URL } from "./sync-config.js";
+import { isUnlocked, unlock, forget } from "./passcode.js";
 import { STORES, isConfigured, priceAllStores, compareStores, cheapestFor, formatMoney, sourceName, productUrl,
          saveMatrix, loadMatrix, forgetMatrix, matrixFreshness, goneFromList, resolveProductUrl } from "./pricing.js";
 
@@ -1478,24 +1479,76 @@ store.onChange(() => {
   }
 });
 
-/* ---------- Start ---------- */
-store.open(linkSecret)
-  .then(() => {
-    // A shared list arrives as a token in the URL; adopt it and open it.
-    if (incomingShare) {
-      const share = Store.parseShareToken(incomingShare);
-      if (share) {
-        const joined = store.joinList(share.id, share.secret);
-        listId = share.id;
-        showListView();
-        showToast(joined ? 'List added.' : 'You already have that list.');
-        return;
-      }
+/* ---------- Start ----------
+
+   Nothing opens until the app is unlocked: no store, no sync, no lookups. A
+   stranger with the URL gets a passcode box and an app that has not started. */
+const lockScreen = document.getElementById('lockScreen');
+const lockForm   = document.getElementById('lockForm');
+const lockInput  = document.getElementById('lockInput');
+const lockSubmit = document.getElementById('lockSubmit');
+const lockError  = document.getElementById('lockError');
+
+function showLockError(message) {
+  if (!lockError) return;
+  lockError.textContent = message;
+  lockError.classList.toggle('hidden', !message);
+}
+
+function askForPasscode() {
+  if (!lockScreen) return; // no lock screen in this build; nothing to ask with
+  lockScreen.classList.remove('hidden');
+  homeSection?.classList.add('hidden');
+  listView?.classList.add('hidden');
+  lockInput?.focus();
+
+  lockForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showLockError('');
+    lockSubmit.disabled = true;
+    const previous = lockSubmit.textContent;
+    lockSubmit.textContent = 'Checking…';
+    const result = await unlock(lockInput.value);
+    lockSubmit.disabled = false;
+    lockSubmit.textContent = previous;
+
+    if (!result.ok) {
+      showLockError(result.reason);
+      lockInput.select();
+      return;
     }
-    if (listId && store.hasList(listId)) showListView();
-    else { listId = null; showHome(); }
-  })
-  .catch((err) => {
-    console.error('could not open the store:', err);
-    showHome();
+    lockInput.value = '';
+    lockScreen.classList.add('hidden');
+    startApp();
   });
+}
+
+function startApp() {
+  store.open(linkSecret)
+    .then(() => {
+      // A shared list arrives as a token in the URL; adopt it and open it.
+      if (incomingShare) {
+        const share = Store.parseShareToken(incomingShare);
+        if (share) {
+          const joined = store.joinList(share.id, share.secret);
+          listId = share.id;
+          showListView();
+          showToast(joined ? 'List added.' : 'You already have that list.');
+          return;
+        }
+      }
+      if (listId && store.hasList(listId)) showListView();
+      else { listId = null; showHome(); }
+    })
+    .catch((err) => {
+      console.error('could not open the store:', err);
+      showHome();
+    });
+}
+
+if (isUnlocked()) startApp();
+else askForPasscode();
+
+// Giving the device back. Not offered in the UI yet — the passcode is remembered
+// per device on purpose — but this is the way out of a remembered unlock.
+globalThis.shopitLock = () => { forget(); location.reload(); };
