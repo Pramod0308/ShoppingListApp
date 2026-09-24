@@ -19,6 +19,16 @@ export const SIGNALING_SERVERS = [
   'wss://shopnest-signalling.shopitnest.workers.dev'
 ];
 
+// Where changes wait for a device that is not awake.
+//
+// Peer sync only connects two devices that are both open at once, which for a
+// shopping list is the wrong moment. This is the durable half: the same worker on
+// /relay, holding updates until the other phone turns up. What it stores is
+// encrypted with the room secret, which never reaches it — see relay-sync.js.
+//
+// Empty disables it and leaves the app exactly as peer-to-peer as it was.
+export const RELAY_SERVER = 'wss://shopnest-signalling.shopitnest.workers.dev/relay';
+
 // Where the web build is published.
 //
 // Links are built against this rather than location.origin, because inside the
