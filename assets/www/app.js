@@ -46,6 +46,9 @@ if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(locatio
 /* ---------- Elements (HOME) ---------- */
 const homeSection       = document.getElementById('home');
 const listsGrid         = document.getElementById('listsGrid');
+const joinInput         = document.getElementById('joinInput');
+const joinBtn           = document.getElementById('joinBtn');
+const joinErrorEl       = document.getElementById('joinError');
 const newListNameEl     = document.getElementById('newListName');
 const createListBtn     = document.getElementById('createListBtn');
 const themeToggle       = document.getElementById('themeToggle');
@@ -735,6 +738,67 @@ function offerLink(url, message) {
   } else {
     prompt('Copy this link:', url);
   }
+}
+
+/* ---------- Joining a list from a pasted link ----------
+
+   Tapping the link works when the browser has it. But a link that arrives in a chat
+   app, on a phone with this installed, often opens in a different browser than the
+   one holding your lists — and the list is then adopted somewhere you are not
+   looking, with no way to move it. Pasting puts it where you already are.
+
+   Whole URL or bare token: people paste what they were sent, and what they were sent
+   has a scheme and a query string on it. */
+function tokenFromPaste(text) {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return { error: 'Paste the link you were sent.' };
+
+  let join = null;
+  let device = false;
+  try {
+    const params = new URL(trimmed).searchParams;
+    join = params.get('join');
+    device = params.has('link');
+  } catch {
+    // Not a URL. It may be the token on its own, or a link with the scheme rubbed
+    // off by whatever it was copied out of.
+    const at = trimmed.indexOf('join=');
+    if (at >= 0) join = trimmed.slice(at + 5).split(/[&#\s]/)[0];
+    else if (trimmed.includes('link=')) device = true;
+    else if (trimmed.includes('~')) join = trimmed;
+  }
+
+  // A device link carries every list and replaces which set of lists this device
+  // syncs with. Quietly treating it as a list to join would swap someone's whole
+  // index out from under them, so it is named rather than attempted.
+  if (device) {
+    return { error: 'That is a device link — it carries every list. Open it directly to pair a device.' };
+  }
+  if (!join) return { error: 'That does not look like a list link.' };
+
+  const share = Store.parseShareToken(decodeURIComponent(join));
+  if (!share) return { error: 'That link is incomplete — copy the whole thing.' };
+  return { share };
+}
+
+function showJoinError(message) {
+  if (!joinErrorEl) return;
+  joinErrorEl.textContent = message;
+  joinErrorEl.classList.toggle('hidden', !message);
+}
+
+function joinFromPaste() {
+  const { share, error } = tokenFromPaste(joinInput?.value);
+  if (error) {
+    showJoinError(error);
+    return;
+  }
+  showJoinError('');
+  joinInput.value = '';
+  const joined = store.joinList(share.id, share.secret);
+  listId = share.id;
+  showListView();
+  showToast(joined ? 'List added.' : 'You already have that list.');
 }
 
 // One list, and only that list.
@@ -1443,6 +1507,12 @@ if (backHomeBtn)        backHomeBtn.onclick = goHome;
 if (addBtn)             addBtn.onclick = addFromTextarea;
 if (clearAllBtn)        clearAllBtn.onclick = clearAll;
 if (clearCompletedBtn)  clearCompletedBtn.onclick = clearCompleted;
+if (joinBtn)            joinBtn.onclick = joinFromPaste;
+if (joinInput) {
+  joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromPaste(); });
+  // Clear a complaint as soon as they start fixing it.
+  joinInput.addEventListener('input', () => showJoinError(''));
+}
 if (estimateBtn)        estimateBtn.onclick = () => estimateCost();
 if (matrixRefreshBtn)   matrixRefreshBtn.onclick = () => estimateCost({ fresh: true });
 if (purgeDeletedBtn)    purgeDeletedBtn.onclick = () => {

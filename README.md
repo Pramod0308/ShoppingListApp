@@ -69,6 +69,13 @@ A server that cannot read the updates cannot merge them either, so the log is
 append-only and clients are asked to collapse it: a snapshot is one device's whole
 document, and it replaces every update it covers.
 
+**Joining by paste.** A link someone sends you works when you tap it — but on a phone
+with this installed, a link opened from a chat app often lands in a different browser
+than the one holding your lists, and the list is then adopted somewhere you are not
+looking. **Paste a list link to join** on the home screen puts it where you already
+are. It takes the whole URL or the bare token, and a device link pasted there is named
+rather than adopted, because that one carries every list.
+
 **Sharing.** Two links, meaning two different things. Share on a list copies a
 `?join=` link that hands over that one list. Link device copies a `?link=` link that
 hands over your whole index, and so every list in it. Both are adopted and stripped
@@ -257,6 +264,22 @@ The service worker precaches the whole bundle, so the installed web app opens
 offline. It is deliberately **not** registered on `localhost`: inside the mobile
 shell the bundle already comes off disk, and a cache in front of it would serve the
 previous build after an app update.
+
+## Continuous integration
+
+Every push and pull request runs the two checks that can actually fail on a change to
+this repo: the web bundle (unit suites, end-to-end suite, and that the committed
+bundle matches a fresh build) and the signalling worker.
+
+**The Android and iOS builds do not run on every push.** They are the slow half of a
+run — the iOS one on a macOS runner, which bills at ten times the rate — and what they
+prove is that the Flutter shell still compiles around the bundle, which a change to
+`assets/www` does not put at risk. They run on a `v*` tag, where the release is
+actually cut and signed, and on `workflow_dispatch` when you want one on demand.
+
+The trade is worth naming: a change that breaks the shell itself — `pubspec.yaml`,
+anything under `android/` or `ios/` — will now get through CI and fail at tag time
+instead. Run the workflow by hand after touching those.
 
 ## Testing
 
