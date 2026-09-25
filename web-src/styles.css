@@ -151,3 +151,13 @@ button, .card-list {
   position: relative;
   overflow: hidden;
 }
+
+/* ============================================================
+   DISCLOSURE
+
+   The browser's own triangle sits where the layout does not want it and cannot be
+   styled, so the chevron in the markup replaces it. Both selectors are needed:
+   WebKit uses a pseudo-element, everyone else honours list-style.
+   ============================================================ */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }

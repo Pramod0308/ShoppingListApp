@@ -91,6 +91,8 @@ const matrixStatusEl    = document.getElementById('matrixStatus');
 const matrixStatusDot   = document.getElementById('matrixStatusDot');
 const matrixStatusText  = document.getElementById('matrixStatusText');
 const matrixRefreshBtn  = document.getElementById('matrixRefresh');
+const pricingEl         = document.getElementById('pricing');
+const pricingHintEl     = document.getElementById('pricingHint');
 
 /* ---------- Helpers ---------- */
 const qs  = (k) => new URLSearchParams(location.search).get(k);
@@ -282,12 +284,58 @@ if (storeSelectEl) {
   };
 }
 
+/* ---------- The pricing section ----------
+
+   Folded away by default. A shop picker and a five-row table above the list push the
+   list itself off a phone screen, and comparing shops is something you do once before
+   a trip rather than while adding items. The state is remembered, because whichever
+   way someone wants it is the way they will want it next time too. */
+const PRICING_OPEN_KEY = 'shopnest-pricing-open';
+
+function rememberPricingOpen(open) {
+  try {
+    localStorage.setItem(PRICING_OPEN_KEY, open ? '1' : '0');
+  } catch {
+    // No storage: it will simply start closed next time.
+  }
+}
+
+function pricingWasOpen() {
+  try {
+    return localStorage.getItem(PRICING_OPEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/// The line under "Compare prices" while the section is shut. Folding the table away
+/// should not fold away the answer, so the headline moves up to the header — and goes
+/// again once the section is open and the fuller version is on screen.
+function renderPricingHint() {
+  if (!pricingHintEl || !pricingEl) return;
+  const open = pricingEl.open;
+  const headline = estimateSummary && !estimateSummary.classList.contains('hidden')
+    ? estimateSummary.textContent
+    : '';
+  pricingHintEl.textContent = open ? '' : (headline || `${STORES.length} shops, side by side`);
+  pricingHintEl.classList.toggle('hidden', open);
+}
+
+if (pricingEl) {
+  pricingEl.open = pricingWasOpen();
+  pricingEl.addEventListener('toggle', () => {
+    rememberPricingOpen(pricingEl.open);
+    renderPricingHint();
+  });
+}
+
 function setSummary(text, tone = 'muted') {
   if (!estimateSummary) return;
   estimateSummary.textContent = text;
   estimateSummary.classList.toggle('hidden', !text);
   estimateSummary.classList.toggle('text-danger', tone === 'danger');
   estimateSummary.classList.toggle('text-muted', tone !== 'danger');
+  renderPricingHint();
 }
 
 /// `fresh` skips the 7-day cache and asks every shop again. That costs a search per
@@ -307,6 +355,9 @@ async function estimateCost({ fresh = false } = {}) {
     return;
   }
 
+  // Asking for an estimate is asking to see one, whether or not the section was
+  // open when the button was pressed.
+  if (pricingEl) pricingEl.open = true;
   estimateBtn.disabled = true;
   if (matrixRefreshBtn) matrixRefreshBtn.disabled = true;
   setSummary(fresh ? 'Asking every shop again…' : 'Checking every shop…');
