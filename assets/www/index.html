@@ -160,9 +160,30 @@
                     </button>
                 </div>
 
-                <!-- Cost estimate. Prices come from the Worker in worker/; item text
-                     is sent only when this button is pressed. -->
-                <div class="mt-3 flex items-center gap-2">
+                <!-- Cost estimate, folded away by default.
+                     Comparing shops is a thing you do once before a trip, not while
+                     you are adding items — and a five-row table plus a shop picker
+                     above the list pushes the list itself off a phone screen. The
+                     headline stays on the closed header, so the answer is still
+                     there when the working is not.
+
+                     A <details> rather than a button and a hidden div: it opens with
+                     the keyboard, it is announced as a disclosure, and it works if
+                     the script never runs.
+
+                     Prices come from the Worker in worker/; item text is sent only
+                     when Estimate is pressed. -->
+                <details id="pricing" class="mt-3 bg-surface border border-line rounded-xl">
+                    <summary id="pricingHeader" class="group flex items-center gap-2 px-3 h-11 cursor-pointer select-none rounded-xl">
+                        <span class="flex-1 min-w-0">
+                            <span class="block text-[13px] font-medium text-ink leading-tight">Compare prices</span>
+                            <span id="pricingHint" class="block text-[11px] text-muted leading-tight truncate"></span>
+                        </span>
+                        <span class="material-symbols-outlined icon-sm text-faint shrink-0 transition-transform group-open:rotate-180">expand_more</span>
+                    </summary>
+
+                    <div class="px-3 pb-3 pt-3 border-t border-line">
+                <div class="flex items-center gap-2">
                     <select id="storeSelect" class="flex-1 min-w-0 h-9 bg-surface border border-line rounded-lg text-[13px] text-ink pl-2.5 pr-8 py-0 focus:ring-0 focus:border-accent transition-colors"></select>
                     <button id="estimateBtn" class="icon-btn shrink-0 h-9 px-3 rounded-lg border border-line text-[13px] font-medium text-ink hover:bg-raised transition-colors">
                         Estimate
@@ -173,11 +194,11 @@
                 <!-- Every shop's price for every item, side by side. Filled by
                      app.js; it scrolls sideways rather than shrinking the columns
                      to nothing on a narrow phone. -->
-                <div id="priceMatrix" class="hidden mt-3 rounded-xl border border-line bg-surface">
+                <div id="priceMatrix" class="hidden mt-3 -mx-3 border-t border-line">
                     <!-- Whether these prices still describe the list. An estimate is a
                          photograph: add or rename an item and the table below is
                          answering a question nobody is asking any more. -->
-                    <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-line">
+                    <div class="flex items-center gap-1.5 px-3 py-1.5 border-b border-line">
                         <div id="matrixStatus" class="flex items-center gap-1.5 min-w-0 flex-1 text-[11px] leading-tight" aria-live="polite">
                             <span id="matrixStatusDot" class="w-1.5 h-1.5 rounded-full shrink-0"></span>
                             <span id="matrixStatusText" class="min-w-0"></span>
@@ -197,6 +218,8 @@
                         </table>
                     </div>
                 </div>
+                    </div>
+                </details>
 
                 <div class="mt-3 flex items-center justify-between px-1">
                     <span id="remaining" class="text-[12px] font-medium text-faint">0 remaining</span>

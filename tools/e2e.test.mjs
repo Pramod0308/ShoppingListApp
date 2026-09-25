@@ -125,6 +125,11 @@ function serveRelay(ws) {
   ws.onClose(() => relaySockets.delete(ws));
 }
 
+// Whether a page opens with the pricing section already unfolded. It ships closed,
+// so every page that drives the shop picker or the table needs it open — except the
+// one below that checks it really does start shut.
+let seedPricingOpen = true;
+
 // Whether a page opens as a device that has already been unlocked. Off only for the
 // check that a stranger with the URL gets a passcode box and nothing else.
 let seedUnlock = true;
@@ -197,13 +202,16 @@ async function openPage(context) {
   // The shipped build asks for a passcode before it starts anything. Every page
   // here is a device that has already been unlocked, except the one below that
   // proves the gate is really there.
-  await page.addInitScript((unlocked) => {
+  await page.addInitScript((state) => {
     window.prompt = (_msg, def) => window.__promptReply ?? def;
     window.confirm = () => window.__confirmReply !== false;
-    if (unlocked) {
+    if (state.unlocked) {
       try { localStorage.setItem('shopnest-unlock', 'test-token'); } catch { /* no storage */ }
     }
-  }, seedUnlock);
+    if (state.pricingOpen) {
+      try { localStorage.setItem('shopnest-pricing-open', '1'); } catch { /* no storage */ }
+    }
+  }, { unlocked: seedUnlock, pricingOpen: seedPricingOpen });
   return page;
 }
 
@@ -879,6 +887,55 @@ for (const card of await page.$$('#listsGrid .card-list')) {
 await settle(700);
 check('the matrix does not follow you to another list', !(await page.isVisible('#priceMatrix')));
 priceFixture = null;
+
+/* ---------- the pricing section folds away ---------- */
+
+// A shop picker and a five-row table above the list push the list itself off a phone
+// screen, and comparing shops is something you do once before a trip rather than
+// while adding items. So it ships shut — with the answer still on the header.
+seedPricingOpen = false;
+const foldCtx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const folded = await openPage(foldCtx);
+await folded.goto(BASE, { waitUntil: 'networkidle' });
+await folded.waitForTimeout(1500);
+await folded.fill('#newListName', 'Folded');
+await folded.press('#newListName', 'Enter');
+await folded.waitForTimeout(800);
+
+check('the pricing section starts shut', !(await folded.isVisible('#storeSelect')));
+check('and the table with it', !(await folded.isVisible('#priceMatrix')));
+check('but the header is there to open it', await folded.isVisible('#pricingHeader'));
+check('which says what is behind it', /shops, side by side/.test(await folded.textContent('#pricingHint')),
+  await folded.textContent('#pricingHint'));
+
+await folded.click('#pricingHeader');
+await folded.waitForTimeout(400);
+check('opening it reveals the shop picker', await folded.isVisible('#storeSelect'));
+check('and the hint steps aside for the fuller version', await folded.isHidden('#pricingHint'));
+
+// The choice is remembered: whichever way someone wants it is the way they will want
+// it next time.
+await folded.reload({ waitUntil: 'networkidle' });
+await folded.waitForTimeout(1500);
+check('and it is still open after a reload', await folded.isVisible('#storeSelect'));
+
+await folded.click('#pricingHeader');
+await folded.waitForTimeout(400);
+await folded.reload({ waitUntil: 'networkidle' });
+await folded.waitForTimeout(1500);
+check('shutting it is remembered too', !(await folded.isVisible('#storeSelect')));
+
+// Pressing Estimate is asking to see an estimate, so the section opens for it — but
+// the button is behind the fold, which is the point of the header opening first.
+await folded.click('#pricingHeader');
+await folded.waitForTimeout(300);
+priceFixture = () => ({ results: [] });
+await folded.click('#estimateBtn');
+await folded.waitForTimeout(1200);
+check('estimating leaves the section open', await folded.isVisible('#storeSelect'));
+priceFixture = null;
+await foldCtx.close();
+seedPricingOpen = true;
 
 /* ---------- joining a list by pasting the link ---------- */
 

@@ -83,7 +83,14 @@ from the URL on arrival, so the secret does not linger in history. Your name and
 colour ride along in the document, so shared lists show who made what — there is no
 account behind it.
 
-**Cost estimate.** Estimate prices what is still to buy at all four shops — ASDA,
+**Cost estimate**, behind one fold. The shop picker, Estimate, the headline and the
+matrix live in a **Compare prices** section that ships shut: comparing shops is
+something you do once before a trip, not while adding items, and a picker plus a
+five-row table above the list pushes the list itself off a phone screen. Closing it
+does not hide the answer — the headline moves up onto the header. The choice is
+remembered, and pressing Estimate opens it.
+
+Estimate prices what is still to buy at all four shops — ASDA,
 Morrisons, Sainsbury's and Tesco — and lays them out as a matrix: a row per item, a
 column per shop, the cheapest shop for each item picked out, and a row of totals with
 the cheapest basket picked out. Each price carries the product it is actually for,
